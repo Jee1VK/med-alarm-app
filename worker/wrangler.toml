@@ -4,4 +4,4 @@ compatibility_date = "2026-11-01"
 
 [[kv_namespaces]]
 binding = "MEDCLOCK_SYNC"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
+id = "2428ff0a0d38466c92245857b4cecf3c"

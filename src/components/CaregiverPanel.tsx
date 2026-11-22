@@ -58,7 +58,9 @@ export function CaregiverPanel({
   const [connectCode, setConnectCode] = useState(watchConfig?.code ?? '');
   const [connectPin, setConnectPin] = useState('');
   const [connectUrl, setConnectUrl] = useState(
-    watchConfig?.syncServerUrl || shareConfig.syncServerUrl || ''
+    watchConfig?.syncServerUrl ||
+      shareConfig.syncServerUrl ||
+      'https://medclock-caregiver-sync.medclock-sync.workers.dev'
   );
   const [watchStatus, setWatchStatus] = useState<string | null>(null);
   const [loadingWatch, setLoadingWatch] = useState(false);

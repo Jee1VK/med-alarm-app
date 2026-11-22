@@ -11,7 +11,9 @@ const SHARE_KEY = 'medclock.caregiver.share.v1';
 const WATCH_KEY = 'medclock.caregiver.watch.v1';
 const WATCH_CACHE_KEY = 'medclock.caregiver.snapshot.v1';
 
-const DEFAULT_SYNC_URL: string = import.meta.env.VITE_CAREGIVER_SYNC_URL || '';
+const DEFAULT_SYNC_URL: string =
+  import.meta.env.VITE_CAREGIVER_SYNC_URL ||
+  'https://medclock-caregiver-sync.medclock-sync.workers.dev';
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -51,7 +53,7 @@ export function loadShareConfig(): CaregiverShareConfig {
           writeSecret: parsed.writeSecret,
           patientLabel: parsed.patientLabel || 'My Meds',
           pinHash: parsed.pinHash,
-          syncServerUrl: parsed.syncServerUrl ?? DEFAULT_SYNC_URL,
+          syncServerUrl: parsed.syncServerUrl || DEFAULT_SYNC_URL,
           lastSyncedAt: parsed.lastSyncedAt,
         };
       }
