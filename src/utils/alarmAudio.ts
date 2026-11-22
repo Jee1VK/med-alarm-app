@@ -7,29 +7,36 @@ import type { AlarmTone } from '../types';
 class AlarmAudioEngine {
   private ctx: AudioContext | null = null;
   private loopTimer: number | null = null;
-  private activeNodes: AudioNode[] = [];
+  private activeNodes: Set<AudioNode> = new Set();
   private isPlaying = false;
   private vibrateTimer: number | null = null;
 
-  private ensureContext(): AudioContext {
+  private getOrCreateContext(): AudioContext {
     if (!this.ctx) {
-      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       this.ctx = new AudioCtx();
     }
-    if (this.ctx.state === 'suspended') {
-      void this.ctx.resume();
-    }
     return this.ctx;
+  }
+
+  private async ensureContextRunning(): Promise<AudioContext> {
+    const ctx = this.getOrCreateContext();
+    if (ctx.state === 'suspended') {
+      try {
+        await ctx.resume();
+      } catch {
+        // Browser may block resume outside user gesture
+      }
+    }
+    return ctx;
   }
 
   /** Must be called from a user gesture so browser autoplay policy unlocks audio. */
   async unlock(): Promise<boolean> {
     try {
-      const ctx = this.ensureContext();
-      if (ctx.state === 'suspended') {
-        await ctx.resume();
-      }
-      // Play an inaudible 1ms buffer to permanently unlock iOS/Chrome audio
+      const ctx = await this.ensureContextRunning();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       gain.gain.value = 0.0001;
@@ -47,8 +54,7 @@ class AlarmAudioEngine {
     return this.ctx ? this.ctx.state : 'uninitialized';
   }
 
-  private playToneBurst(tone: AlarmTone, volume: number): void {
-    const ctx = this.ensureContext();
+  private playToneBurst(ctx: AudioContext, tone: AlarmTone, volume: number): void {
     const now = ctx.currentTime;
     const vol = Math.max(0.1, Math.min(1, volume));
 
@@ -71,35 +77,43 @@ class AlarmAudioEngine {
       osc.connect(gain);
       gain.connect(ctx.destination);
 
+      this.activeNodes.add(osc);
+      this.activeNodes.add(gain);
+      osc.onended = () => {
+        this.activeNodes.delete(osc);
+        this.activeNodes.delete(gain);
+        try {
+          osc.disconnect();
+          gain.disconnect();
+        } catch {
+          // Ignore already disconnected
+        }
+      };
+
       osc.start(now + startOffset);
       osc.stop(now + startOffset + duration + 0.02);
-      this.activeNodes.push(osc, gain);
     };
 
     switch (tone) {
       case 'temple_chime':
-        // Resonant harmonic fifth + octave chime
         scheduleNote(523.25, 0.0, 0.55, 'triangle', 0.7);
         scheduleNote(783.99, 0.16, 0.55, 'triangle', 0.65);
         scheduleNote(1046.5, 0.34, 0.75, 'sine', 0.7);
         break;
       case 'classic_bell':
-        // Loud double-ring alarm clock
         scheduleNote(880, 0.0, 0.14, 'square', 0.45);
         scheduleNote(880, 0.18, 0.14, 'square', 0.45);
         scheduleNote(880, 0.36, 0.14, 'square', 0.45);
         scheduleNote(880, 0.72, 0.14, 'square', 0.45);
-        scheduleNote(880, 0.90, 0.14, 'square', 0.45);
+        scheduleNote(880, 0.9, 0.14, 'square', 0.45);
         break;
       case 'urgent_pulse':
-        // High-visibility medical alert beep sequence
         scheduleNote(987.77, 0.0, 0.18, 'sawtooth', 0.45);
         scheduleNote(1318.51, 0.22, 0.18, 'sawtooth', 0.5);
         scheduleNote(987.77, 0.44, 0.18, 'sawtooth', 0.45);
         scheduleNote(1318.51, 0.66, 0.28, 'sawtooth', 0.5);
         break;
       case 'gentle_dawn':
-        // Warm ascending triad
         scheduleNote(392.0, 0.0, 0.45, 'sine', 0.55);
         scheduleNote(493.88, 0.25, 0.45, 'sine', 0.55);
         scheduleNote(587.33, 0.5, 0.65, 'sine', 0.6);
@@ -108,19 +122,26 @@ class AlarmAudioEngine {
   }
 
   /** Preview a tone once (non-looping). */
-  preview(tone: AlarmTone, volume = 0.8): void {
+  async preview(tone: AlarmTone, volume = 0.8): Promise<void> {
     this.stop();
-    this.playToneBurst(tone, volume);
+    const ctx = await this.ensureContextRunning();
+    this.playToneBurst(ctx, tone, volume);
   }
 
   /** Start persistent looping alarm + optional vibration until stop() is called. */
-  startLoop(tone: AlarmTone, volume = 0.9, vibrate = true): void {
+  async startLoop(tone: AlarmTone, volume = 0.9, vibrate = true): Promise<void> {
     this.stop();
     this.isPlaying = true;
 
+    const ctx = await this.ensureContextRunning();
+    if (!this.isPlaying) return;
+
     const trigger = () => {
       if (!this.isPlaying) return;
-      this.playToneBurst(tone, volume);
+      if (ctx.state === 'suspended') {
+        void ctx.resume();
+      }
+      this.playToneBurst(ctx, tone, volume);
     };
 
     trigger();
@@ -156,7 +177,7 @@ class AlarmAudioEngine {
         // Ignore already-stopped nodes
       }
     }
-    this.activeNodes = [];
+    this.activeNodes.clear();
   }
 }
 
