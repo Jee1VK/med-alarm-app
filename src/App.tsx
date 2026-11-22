@@ -34,6 +34,12 @@ import { exportBackupJson, exportHistoryCsv, parseBackupJson } from './utils/exp
 import { ENCOURAGING_MESSAGES, computeStreak, getEarnedBadges } from './utils/gamification';
 import { type PhotoKind, deleteAllPhotosForMed } from './utils/imageStore';
 import {
+  initNativeAlarms,
+  isNativeAndroid,
+  scheduleNativeSnooze,
+  syncNativeMedicationAlarms,
+} from './utils/nativeAlarms';
+import {
   SAMPLE_MEDICATIONS,
   createId,
   loadInitialData,
@@ -83,6 +89,7 @@ export function App() {
   );
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isStandalone, setIsStandalone] = useState<boolean>(() =>
+    isNativeAndroid() ||
     window.matchMedia?.('(display-mode: standalone)').matches ||
     (window.navigator as unknown as { standalone?: boolean }).standalone === true
   );
@@ -96,7 +103,13 @@ export function App() {
   const [showConfetti, setShowConfetti] = useState(false);
   const toastIdxRef = useRef(0);
 
-  useEffect(() => saveMedications(medications), [medications]);
+  useEffect(() => {
+    saveMedications(medications);
+    void syncNativeMedicationAlarms(medications);
+  }, [medications]);
+  useEffect(() => {
+    void initNativeAlarms();
+  }, []);
   useEffect(() => saveLogs(logs), [logs]);
   useEffect(() => saveSettings(settings), [settings]);
   useEffect(() => {
@@ -272,6 +285,7 @@ export function App() {
 
   const handleRingSnooze = (minutes: number) => {
     if (activeRing) {
+      void scheduleNativeSnooze(activeRing, minutes);
       logAction(
         activeRing.itemId,
         activeRing.title,
