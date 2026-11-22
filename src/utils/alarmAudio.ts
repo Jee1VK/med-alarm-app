@@ -135,17 +135,21 @@ function createWavBlobUrl(tone: AlarmTone): string {
         // Continuous phase integral for linear frequency sweep
         const phase = 2 * Math.PI * (n.freq * localT + 0.5 * ((endF - n.freq) / n.dur) * localT * localT);
         const wave = n.bright
-          ? Math.sin(phase) + 0.28 * Math.sin(3 * phase)
-          : Math.sin(phase);
-        sample += wave * n.amp * attack * decay;
+          ? Math.sin(phase) + 0.45 * Math.sin(2 * phase) + 0.35 * Math.sin(3 * phase)
+          : Math.sin(phase) + 0.3 * Math.sin(2 * phase);
+        sample += wave * Math.min(1, n.amp * 1.35) * attack * decay;
       }
     }
-    const clamped = Math.max(-1, Math.min(1, sample));
+    // Soft-clip limiter for maximum perceived loudness without harsh distortion
+    const boosted = Math.tanh(sample * 1.45);
+    const clamped = Math.max(-0.98, Math.min(0.98, boosted));
     view.setInt16(44 + i * 2, Math.floor(clamped * 32767), true);
   }
 
   return URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
 }
+
+const MAX_RING_DURATION_MS = 3 * 60 * 1000; // Ring up to 3 minutes or until stopped
 
 class AlarmAudioEngine {
   private ctx: AudioContext | null = null;
@@ -153,6 +157,7 @@ class AlarmAudioEngine {
   private wavUrls: Partial<Record<AlarmTone, string>> = {};
   private loopTimer: number | null = null;
   private vibrateTimer: number | null = null;
+  private autoStopTimer: number | null = null;
   private isPlaying = false;
 
   private getWavUrl(tone: AlarmTone): string {
@@ -301,10 +306,15 @@ class AlarmAudioEngine {
     }
   }
 
-  startLoop(tone: AlarmTone, volume = 0.9, vibrate = true): void {
+  startLoop(tone: AlarmTone, volume = 1.0, vibrate = true): void {
     this.stop();
     this.isPlaying = true;
-    const vol = Math.max(0.1, Math.min(1, volume));
+    const vol = Math.max(0.2, Math.min(1, volume));
+
+    // Automatically stop after 3 minutes if not dismissed earlier
+    this.autoStopTimer = window.setTimeout(() => {
+      this.stop();
+    }, MAX_RING_DURATION_MS);
 
     try {
       const el = this.getAudioElement();
@@ -355,6 +365,10 @@ class AlarmAudioEngine {
     if (this.vibrateTimer !== null) {
       clearInterval(this.vibrateTimer);
       this.vibrateTimer = null;
+    }
+    if (this.autoStopTimer !== null) {
+      clearTimeout(this.autoStopTimer);
+      this.autoStopTimer = null;
     }
     if ('vibrate' in navigator) {
       navigator.vibrate(0);

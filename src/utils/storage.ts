@@ -18,7 +18,7 @@ function safeSetItem(key: string, value: string): void {
 
 const DEFAULT_SETTINGS: AppSettings = {
   defaultSnoozeMinutes: 5,
-  defaultVolume: 0.9,
+  defaultVolume: 1.0,
   keepScreenAwake: false,
 };
 

@@ -65,28 +65,35 @@ jobs:
               for name in ["ic_launcher.png", "ic_launcher_round.png", "ic_launcher_foreground.png"]:
                   shutil.copyfile("public/icon-512.png", os.path.join(d, name))
 
-          # 2. Synthesize a loud, unmistakable 8-second alarm ringtone WAV in res/raw/medclock_alarm.wav
+          # 2. Synthesize a loud, unmistakable 3-minute (180s) alarm ringtone WAV in res/raw/medclock_alarm.wav
+          # Uses speaker-optimized 1.3-2.6 kHz harmonics + soft-clip limiter so phone speakers ring loudly until stopped.
           raw_dir = os.path.join(res_dir, "raw")
           os.makedirs(raw_dir, exist_ok=True)
           wav_path = os.path.join(raw_dir, "medclock_alarm.wav")
-          sample_rate = 22050
-          duration = 8.0
-          n_samples = int(sample_rate * duration)
+          sample_rate = 8000
+          one_sec_samples = sample_rate
+          one_sec_frames = bytearray()
+          for i in range(one_sec_samples):
+              t = i / sample_rate
+              val = 0.0
+              # Loud, urgent 3-pulse dual-harmonic alarm bell every second
+              if t < 0.18 or (0.24 <= t < 0.42) or (0.48 <= t < 0.72):
+                  f1 = 1318.51 if t < 0.48 else 1760.0
+                  f2 = f1 * 1.5
+                  raw = (
+                      0.65 * math.sin(2.0 * math.pi * f1 * t)
+                      + 0.45 * math.sin(2.0 * math.pi * f2 * t)
+                      + 0.25 * math.sin(4.0 * math.pi * f1 * t)
+                  )
+                  val = math.tanh(raw * 1.6) * 0.98
+              s = max(-32767, min(32767, int(val * 32767)))
+              one_sec_frames += struct.pack("<h", s)
           with wave.open(wav_path, "w") as wf:
               wf.setnchannels(1)
               wf.setsampwidth(2)
               wf.setframerate(sample_rate)
-              frames = bytearray()
-              for i in range(n_samples):
-                  t = i / sample_rate
-                  cycle = t % 1.0
-                  val = 0.0
-                  if cycle < 0.16 or (0.22 <= cycle < 0.38) or (0.44 <= cycle < 0.65):
-                      freq = 880.0 if cycle < 0.44 else 1174.66
-                      val = 0.72 * math.sin(2.0 * math.pi * freq * t) + 0.22 * math.sin(6.0 * math.pi * freq * t)
-                  s = max(-32767, min(32767, int(val * 32767)))
-                  frames += struct.pack("<h", s)
-              wf.writeframes(frames)
+              # Repeat 1-second loud pattern 180 times = full 3 minutes (until user stops/dismisses)
+              wf.writeframes(one_sec_frames * 180)
           EOF
 
       - name: Configure Permanent Signing & Auto-Incrementing Version

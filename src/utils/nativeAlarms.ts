@@ -3,8 +3,8 @@ import { LocalNotifications } from '@capacitor/local-notifications';
 import type { Medication, RingingTarget } from '../types';
 import { foodTimingLabel, getMedicationTimes } from './time';
 
-// New channel ID ensures Android registers our loud custom alarm WAV & MAX importance
-const ALARM_CHANNEL_ID = 'medclock_alarms_v2';
+// v3 channel registers the new loud 3-minute custom alarm WAV at MAX importance
+const ALARM_CHANNEL_ID = 'medclock_alarms_v3';
 const ALARM_SOUND_FILE = 'medclock_alarm.wav';
 
 export function isNativeAndroid(): boolean {
