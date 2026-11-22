@@ -32,12 +32,18 @@ import type { AppSettings, LogEntry, Medication, RingingTarget } from './types';
 import { alarmAudio } from './utils/alarmAudio';
 import { exportBackupJson, exportHistoryCsv, parseBackupJson } from './utils/exportData';
 import { ENCOURAGING_MESSAGES, computeStreak, getEarnedBadges } from './utils/gamification';
-import { type PhotoKind, deleteAllPhotosForMed } from './utils/imageStore';
+import {
+  type PhotoKind,
+  deleteAllPhotosForMed,
+  exportAllPhotos,
+  importAllPhotos,
+} from './utils/imageStore';
 import {
   initNativeAlarms,
   isNativeAndroid,
   scheduleNativeSnooze,
   scheduleNativeTestAlarm,
+  subscribeNativeAlarmTap,
   syncNativeMedicationAlarms,
 } from './utils/nativeAlarms';
 import {
@@ -110,11 +116,22 @@ export function App() {
 
   useEffect(() => {
     saveMedications(medications);
-    if (isNativeAndroid()) {
+    if (!isNativeAndroid()) return;
+    const syncNow = () => {
       void syncNativeMedicationAlarms(medications).then((count) => {
         setNativeScheduledCount(count);
       });
-    }
+    };
+    syncNow();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') syncNow();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', syncNow);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', syncNow);
+    };
   }, [medications]);
   useEffect(() => {
     void initNativeAlarms();
@@ -168,6 +185,29 @@ export function App() {
     logs,
     settings,
   });
+
+  // When a user taps a closed-app Android alarm notification, jump straight to its RingingModal
+  useEffect(() => {
+    return subscribeNativeAlarmTap((medId, scheduledTime) => {
+      const med = medications.find((m) => m.id === medId);
+      if (!med) return;
+      triggerTestRing({
+        key: `medication:${med.id}:${scheduledTime}`,
+        itemId: med.id,
+        title: med.name,
+        subtitle: med.dosage,
+        scheduledTime,
+        tone: med.tone,
+        vibrate: med.vibrate,
+        foodTiming: med.foodTiming,
+        notes: med.notes,
+        remainingDoses: med.remainingDoses,
+        refillThreshold: med.refillThreshold,
+        trackStock: med.trackStock,
+        hasTabletPhoto: med.hasTabletPhoto,
+      });
+    });
+  }, [medications, triggerTestRing]);
 
   const todayKey = toDateKey(now);
   const todayDow = now.getDay();
@@ -312,10 +352,13 @@ export function App() {
     try {
       const text = await file.text();
       const restored = parseBackupJson(text);
+      const photoCount = restored.photos ? await importAllPhotos(restored.photos) : 0;
       setMedications(restored.medications);
       setLogs(restored.logs);
       setSettings(restored.settings);
-      setRestoreStatus(`Restored ${restored.medications.length} medicine(s) and ${restored.logs.length} log entries.`);
+      setRestoreStatus(
+        `Restored ${restored.medications.length} medicine(s), ${restored.logs.length} log entries${photoCount > 0 ? `, and ${photoCount} photo(s)` : ''}.`
+      );
     } catch {
       setRestoreStatus('Could not restore: invalid MedClock JSON backup file.');
     } finally {
@@ -656,34 +699,6 @@ export function App() {
                 </div>
               </div>
             </section>
-          )}
-
-          {isNativeAndroid() && (
-            <div className="banner banner--info" role="status">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <BellRing size={18} aria-hidden="true" />
-                <span>
-                  <strong>Android Alarms Ready:</strong>{' '}
-                  {nativeScheduledCount !== null
-                    ? `${nativeScheduledCount} upcoming alarm${nativeScheduledCount === 1 ? '' : 's'} synced to OS.`
-                    : 'Syncing with Android…'}
-                </span>
-              </div>
-              <button
-                type="button"
-                className="btn btn--primary btn--sm"
-                onClick={async () => {
-                  const ok = await scheduleNativeTestAlarm();
-                  setToastMsg(
-                    ok
-                      ? 'Test alarm set for 5 seconds! Close the app or lock your screen now.'
-                      : 'Please allow Notifications permission for MedClock in Android Settings.'
-                  );
-                }}
-              >
-                Test 5s Alarm
-              </button>
-            </div>
           )}
 
           {!isNativeAndroid() && !audioUnlocked && (
@@ -1283,7 +1298,10 @@ export function App() {
                 <button
                   type="button"
                   className="btn btn--secondary btn--sm"
-                  onClick={() => exportBackupJson(medications, logs, settings)}
+                  onClick={async () => {
+                    const photos = await exportAllPhotos();
+                    exportBackupJson(medications, logs, settings, photos);
+                  }}
                 >
                   <Download size={16} aria-hidden="true" /> Download Backup
                 </button>
@@ -1295,15 +1313,32 @@ export function App() {
                   <Upload size={16} aria-hidden="true" /> Restore Backup
                 </button>
                 {isNativeAndroid() && (
-                  <a
-                    className="btn btn--primary btn--sm"
-                    style={{ textDecoration: 'none' }}
-                    href={LATEST_APK_URL}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <Download size={16} aria-hidden="true" /> Download APK
-                  </a>
+                  <>
+                    <button
+                      type="button"
+                      className="btn btn--secondary btn--sm"
+                      onClick={async () => {
+                        const ok = await scheduleNativeTestAlarm();
+                        setRestoreStatus(
+                          ok
+                            ? 'Test alarm set for 5 seconds! Close the app or lock your screen now.'
+                            : 'Please allow Notifications permission for MedClock in Android Settings.'
+                        );
+                      }}
+                    >
+                      <BellRing size={16} aria-hidden="true" /> Test 5s Closed Alarm
+                      {nativeScheduledCount !== null ? ` (${nativeScheduledCount} synced)` : ''}
+                    </button>
+                    <a
+                      className="btn btn--primary btn--sm"
+                      style={{ textDecoration: 'none' }}
+                      href={LATEST_APK_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <Download size={16} aria-hidden="true" /> Download APK
+                    </a>
+                  </>
                 )}
                 <input
                   ref={restoreInputRef}

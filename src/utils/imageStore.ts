@@ -97,3 +97,53 @@ export async function deleteMedPhoto(medId: string, kind: PhotoKind): Promise<vo
 export async function deleteAllPhotosForMed(medId: string): Promise<void> {
   await Promise.all([deleteMedPhoto(medId, 'tablet'), deleteMedPhoto(medId, 'prescription')]);
 }
+
+/** Export all stored tablet & prescription photos as a key->dataUrl map for JSON backup. */
+export async function exportAllPhotos(): Promise<Record<string, string>> {
+  try {
+    const db = await openDb();
+    return await new Promise((resolve, reject) => {
+      const result: Record<string, string> = {};
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.openCursor();
+      req.onsuccess = () => {
+        const cursor = req.result;
+        if (cursor) {
+          if (typeof cursor.key === 'string' && typeof cursor.value === 'string') {
+            result[cursor.key] = cursor.value;
+          }
+          cursor.continue();
+        } else {
+          resolve(result);
+        }
+      };
+      req.onerror = () => reject(req.error);
+    });
+  } catch {
+    return {};
+  }
+}
+
+/** Restore a key->dataUrl photo map back into IndexedDB. */
+export async function importAllPhotos(photos: Record<string, string>): Promise<number> {
+  const entries = Object.entries(photos).filter(
+    ([k, v]) => typeof k === 'string' && typeof v === 'string' && v.startsWith('data:image/')
+  );
+  if (entries.length === 0) return 0;
+  try {
+    const db = await openDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      for (const [k, v] of entries) {
+        store.put(v, k);
+      }
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    return entries.length;
+  } catch {
+    return 0;
+  }
+}

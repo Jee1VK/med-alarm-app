@@ -7,6 +7,7 @@ interface BackupPayload {
   medications: Medication[];
   logs: LogEntry[];
   settings: AppSettings;
+  photos?: Record<string, string>;
 }
 
 function downloadBlob(content: string, filename: string, mimeType: string): void {
@@ -24,7 +25,8 @@ function downloadBlob(content: string, filename: string, mimeType: string): void
 export function exportBackupJson(
   medications: Medication[],
   logs: LogEntry[],
-  settings: AppSettings
+  settings: AppSettings,
+  photos?: Record<string, string>
 ): void {
   const payload: BackupPayload = {
     version: 1,
@@ -32,6 +34,7 @@ export function exportBackupJson(
     medications,
     logs,
     settings,
+    ...(photos && Object.keys(photos).length > 0 ? { photos } : {}),
   };
   downloadBlob(
     JSON.stringify(payload, null, 2),
@@ -70,6 +73,15 @@ export function parseBackupJson(rawText: string): BackupPayload {
       Boolean(l && typeof l === 'object' && typeof l.id === 'string' && typeof l.itemId === 'string' && typeof l.dateKey === 'string')
   );
 
+  const sanitizedPhotos: Record<string, string> = {};
+  if (parsed.photos && typeof parsed.photos === 'object') {
+    for (const [k, v] of Object.entries(parsed.photos)) {
+      if (typeof k === 'string' && typeof v === 'string' && v.startsWith('data:image/')) {
+        sanitizedPhotos[k] = v;
+      }
+    }
+  }
+
   return {
     version: 1,
     exportedAt: parsed.exportedAt ?? new Date().toISOString(),
@@ -77,9 +89,10 @@ export function parseBackupJson(rawText: string): BackupPayload {
     logs: sanitizedLogs,
     settings: parsed.settings ?? {
       defaultSnoozeMinutes: 5,
-      defaultVolume: 0.9,
+      defaultVolume: 1.0,
       keepScreenAwake: false,
     },
+    ...(Object.keys(sanitizedPhotos).length > 0 ? { photos: sanitizedPhotos } : {}),
   };
 }
 

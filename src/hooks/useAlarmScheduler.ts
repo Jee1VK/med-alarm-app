@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   AppSettings,
   LogEntry,
@@ -210,10 +210,10 @@ export function useAlarmScheduler({
     setRingQueue((prev) => prev.slice(1));
   };
 
-  const triggerTestRing = (target: RingingTarget) => {
+  const triggerTestRing = useCallback((target: RingingTarget) => {
     void alarmAudio.unlock();
     setRingQueue((prev) => [target, ...prev.filter((p) => p.key !== target.key)]);
-  };
+  }, []);
 
   return {
     now,

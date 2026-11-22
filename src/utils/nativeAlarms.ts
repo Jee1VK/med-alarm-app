@@ -188,3 +188,35 @@ export async function scheduleNativeSnooze(target: RingingTarget, minutes: numbe
     // Ignore
   }
 }
+
+/**
+ * Listen for taps on native Android alarm notifications so MedClock jumps straight
+ * to that medicine's Mark Taken / Snooze screen. Returns an unsubscribe cleanup fn.
+ */
+export function subscribeNativeAlarmTap(
+  onTap: (medId: string, scheduledTime: string) => void
+): () => void {
+  if (!isNativeAndroid()) return () => {};
+  let removed = false;
+  let handle: { remove: () => Promise<void> } | null = null;
+
+  void LocalNotifications.addListener('localNotificationActionPerformed', (event) => {
+    const extra = event.notification?.extra as { medId?: string; scheduledTime?: string } | undefined;
+    if (extra?.medId && extra?.scheduledTime) {
+      onTap(extra.medId, extra.scheduledTime);
+    }
+  }).then((h) => {
+    if (removed) {
+      void h.remove();
+    } else {
+      handle = h;
+    }
+  });
+
+  return () => {
+    removed = true;
+    if (handle) {
+      void handle.remove();
+    }
+  };
+}
