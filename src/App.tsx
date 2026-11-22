@@ -12,6 +12,7 @@ import {
   Pill,
   Plus,
   RefreshCw,
+  RotateCcw,
   Sun,
   Trash2,
   Volume2,
@@ -22,6 +23,7 @@ import { useAlarmScheduler } from './hooks/useAlarmScheduler';
 import type { AppSettings, LogEntry, Medication, RingingTarget } from './types';
 import { alarmAudio } from './utils/alarmAudio';
 import {
+  SAMPLE_MEDICATIONS,
   createId,
   loadInitialData,
   saveLogs,
@@ -33,7 +35,7 @@ import {
   formatCountdown,
   formatDaysSummary,
   formatTime12h,
-  minutesUntil,
+  signedMinutesUntil,
   toDateKey,
 } from './utils/time';
 
@@ -69,9 +71,10 @@ export function App() {
   );
   const [showIosInstallTip, setShowIosInstallTip] = useState(false);
 
-  // Add/Edit Medication Modal
+  // Add/Edit Medication Modal & Delete Confirm
   const [medModalOpen, setMedModalOpen] = useState(false);
   const [editingMed, setEditingMed] = useState<Medication | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   // Persist changes
   useEffect(() => saveMedications(medications), [medications]);
@@ -186,6 +189,29 @@ export function App() {
     }
   };
 
+  const undoTodayDose = (med: Medication, scheduledTime: string, wasTaken: boolean) => {
+    setLogs((prev) =>
+      prev.filter(
+        (l) =>
+          !(
+            l.itemId === med.id &&
+            l.dateKey === todayKey &&
+            l.scheduledTime === scheduledTime &&
+            (l.action === 'taken' || l.action === 'skipped')
+          )
+      )
+    );
+    if (wasTaken && med.trackStock) {
+      setMedications((prev) =>
+        prev.map((m) =>
+          m.id === med.id
+            ? { ...m, remainingDoses: Math.min(m.totalDoses, m.remainingDoses + m.dosesPerIntake) }
+            : m
+        )
+      );
+    }
+  };
+
   const handleRingMarkTaken = (target: RingingTarget) => {
     const med = medications.find((m) => m.id === target.itemId);
     if (med) {
@@ -244,15 +270,23 @@ export function App() {
   }, [medications, logs, todayDow, todayKey]);
 
   const nextUpcoming = useMemo(() => {
-    const candidates = todaySchedule
+    const pending = todaySchedule
       .filter((row) => row.status === 'pending')
       .map((row) => ({
         title: row.med.name,
         time: row.time,
-        mins: minutesUntil(row.time, now),
-      }))
-      .sort((a, b) => a.mins - b.mins);
-    return candidates[0] ?? null;
+        mins: signedMinutesUntil(row.time, now),
+      }));
+
+    const upcoming = pending.filter((p) => p.mins >= 0).sort((a, b) => a.mins - b.mins);
+    if (upcoming.length > 0) {
+      return { kind: 'upcoming' as const, item: upcoming[0], overdueCount: pending.length - upcoming.length };
+    }
+    const overdue = pending.filter((p) => p.mins < 0).sort((a, b) => b.mins - a.mins);
+    if (overdue.length > 0) {
+      return { kind: 'overdue' as const, item: overdue[0], overdueCount: overdue.length };
+    }
+    return null;
   }, [todaySchedule, now]);
 
   const lowStockMeds = useMemo(
@@ -388,15 +422,22 @@ export function App() {
               <div className="hero-date">{formattedDate}</div>
             </div>
             <div className="hero-next-pill">
-              <div className="hero-next-label">Next Dose Alarm</div>
+              <div className="hero-next-label">
+                {nextUpcoming?.kind === 'overdue' ? 'Overdue Dose' : 'Next Dose Alarm'}
+              </div>
               {nextUpcoming ? (
                 <div className="hero-next-value">
-                  {nextUpcoming.title} •{' '}
-                  <span className="tabular-nums">{formatTime12h(nextUpcoming.time)}</span> (
-                  {formatCountdown(nextUpcoming.mins)})
+                  {nextUpcoming.item.title} •{' '}
+                  <span className="tabular-nums">{formatTime12h(nextUpcoming.item.time)}</span> (
+                  {formatCountdown(nextUpcoming.item.mins)})
+                  {nextUpcoming.overdueCount > 0 && nextUpcoming.kind === 'upcoming'
+                    ? ` • ${nextUpcoming.overdueCount} overdue`
+                    : ''}
                 </div>
               ) : (
-                <div className="hero-next-value">All doses completed for today</div>
+                <div className="hero-next-value">
+                  {todaySchedule.length === 0 ? 'No doses scheduled today' : 'All doses completed for today'}
+                </div>
               )}
             </div>
           </section>
@@ -487,54 +528,75 @@ export function App() {
           </div>
 
           {todaySchedule.length === 0 ? (
-            <div className="card">
+            <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'flex-start' }}>
               <p style={{ margin: 0, color: 'var(--color-text-secondary)' }}>
-                No medications scheduled for today. Tap <strong>Add Medicine</strong> above to add a medicine and its alarm times.
+                No medications scheduled for today. Tap <strong>Add Medicine</strong> to set up a medicine and its linked alarm times.
               </p>
+              {medications.length === 0 && (
+                <button
+                  type="button"
+                  className="btn btn--secondary btn--sm"
+                  onClick={() => setMedications(SAMPLE_MEDICATIONS)}
+                >
+                  Load Sample Schedule
+                </button>
+              )}
             </div>
           ) : (
             <div className="stack">
-              {todaySchedule.map(({ key, time, med, status }) => (
-                <article
-                  key={key}
-                  className={`item-card ${status !== 'pending' ? 'item-card--done' : ''}`}
-                >
-                  <div className="item-meta">
-                    <div className="item-title-row">
-                      <span
-                        className="tabular-nums"
-                        style={{ fontWeight: 700, color: 'var(--color-brand-primary)' }}
-                      >
-                        {formatTime12h(time)}
-                      </span>
-                      <h3 className="item-title">{med.name}</h3>
-                      <span className="badge badge--gold">{foodTimingLabel(med.foodTiming)}</span>
-                      {status === 'taken' && <span className="badge badge--green">Taken</span>}
-                      {status === 'skipped' && <span className="badge badge--red">Skipped</span>}
+              {todaySchedule.map(({ key, time, med, status }) => {
+                const isOverdue = status === 'pending' && signedMinutesUntil(time, now) < 0;
+                return (
+                  <article
+                    key={key}
+                    className={`item-card ${status !== 'pending' ? 'item-card--done' : ''}`}
+                  >
+                    <div className="item-meta">
+                      <div className="item-title-row">
+                        <span
+                          className="tabular-nums"
+                          style={{ fontWeight: 700, color: 'var(--color-brand-primary)' }}
+                        >
+                          {formatTime12h(time)}
+                        </span>
+                        <h3 className="item-title">{med.name}</h3>
+                        <span className="badge badge--gold">{foodTimingLabel(med.foodTiming)}</span>
+                        {isOverdue && <span className="badge badge--red">Overdue</span>}
+                        {status === 'taken' && <span className="badge badge--green">Taken</span>}
+                        {status === 'skipped' && <span className="badge badge--red">Skipped</span>}
+                      </div>
+                      <div className="item-sub">{med.dosage}</div>
                     </div>
-                    <div className="item-sub">{med.dosage}</div>
-                  </div>
 
-                  {status === 'pending' && (
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button
-                        type="button"
-                        className="btn btn--success btn--sm"
-                        onClick={() => markMedicationTaken(med, time)}
-                      >
-                        <Check size={16} aria-hidden="true" /> Take
-                      </button>
+                    {status === 'pending' ? (
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button
+                          type="button"
+                          className="btn btn--success btn--sm"
+                          onClick={() => markMedicationTaken(med, time)}
+                        >
+                          <Check size={16} aria-hidden="true" /> Take
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn--secondary btn--sm"
+                          onClick={() => logAction(med.id, med.name, med.dosage, time, 'skipped')}
+                        >
+                          Skip
+                        </button>
+                      </div>
+                    ) : (
                       <button
                         type="button"
                         className="btn btn--secondary btn--sm"
-                        onClick={() => logAction(med.id, med.name, med.dosage, time, 'skipped')}
+                        onClick={() => undoTodayDose(med, time, status === 'taken')}
                       >
-                        Skip
+                        <RotateCcw size={15} aria-hidden="true" /> Undo
                       </button>
-                    </div>
-                  )}
-                </article>
-              ))}
+                    )}
+                  </article>
+                );
+              })}
             </div>
           )}
         </main>
@@ -558,10 +620,17 @@ export function App() {
           </div>
 
           {medications.length === 0 ? (
-            <div className="card">
+            <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'flex-start' }}>
               <p style={{ margin: 0, color: 'var(--color-text-secondary)' }}>
                 No medications added yet. Tap <strong>Add Medicine</strong> to set up your medicine and its linked alarm.
               </p>
+              <button
+                type="button"
+                className="btn btn--secondary btn--sm"
+                onClick={() => setMedications(SAMPLE_MEDICATIONS)}
+              >
+                Load Sample Schedule
+              </button>
             </div>
           ) : (
             <div className="stack">
@@ -656,14 +725,36 @@ export function App() {
                       >
                         <Pencil size={17} aria-hidden="true" />
                       </button>
-                      <button
-                        type="button"
-                        className="icon-btn"
-                        aria-label={`Delete ${med.name}`}
-                        onClick={() => setMedications((prev) => prev.filter((m) => m.id !== med.id))}
-                      >
-                        <Trash2 size={17} aria-hidden="true" />
-                      </button>
+                      {confirmDeleteId === med.id ? (
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button
+                            type="button"
+                            className="btn btn--danger btn--sm"
+                            onClick={() => {
+                              setMedications((prev) => prev.filter((m) => m.id !== med.id));
+                              setConfirmDeleteId(null);
+                            }}
+                          >
+                            Delete
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn--secondary btn--sm"
+                            onClick={() => setConfirmDeleteId(null)}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          aria-label={`Delete ${med.name}`}
+                          onClick={() => setConfirmDeleteId(med.id)}
+                        >
+                          <Trash2 size={17} aria-hidden="true" />
+                        </button>
+                      )}
                       <label className="switch-wrap" aria-label={`Enable alarm for ${med.name}`}>
                         <input
                           className="switch-input"

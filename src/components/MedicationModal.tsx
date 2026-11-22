@@ -12,6 +12,13 @@ interface MedicationModalProps {
   onSave: (med: Medication) => void;
 }
 
+const FREQUENCY_PRESETS: { label: string; times: string[] }[] = [
+  { label: '1× Morning', times: ['08:00'] },
+  { label: '2× Day & Night', times: ['08:00', '20:00'] },
+  { label: '3× Meals', times: ['08:00', '13:00', '20:00'] },
+  { label: 'Bedtime', times: ['22:00'] },
+];
+
 export function MedicationModal({ open, editing, onClose, onSave }: MedicationModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
 
@@ -19,17 +26,18 @@ export function MedicationModal({ open, editing, onClose, onSave }: MedicationMo
   const [dosage, setDosage] = useState('1 tablet');
   const [times, setTimes] = useState<string[]>(['08:00']);
   const [days, setDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
+  const [daysError, setDaysError] = useState(false);
   const [foodTiming, setFoodTiming] = useState<FoodTiming>('after_food');
   const [tone, setTone] = useState<AlarmTone>('temple_chime');
   const [vibrate, setVibrate] = useState(true);
   const [notes, setNotes] = useState('');
   const [trackStock, setTrackStock] = useState(true);
   const [remainingDoses, setRemainingDoses] = useState(30);
-  const [totalDoses, setTotalDoses] = useState(30);
   const [dosesPerIntake, setDosesPerIntake] = useState(1);
   const [refillThreshold, setRefillThreshold] = useState(5);
 
   useEffect(() => {
+    setDaysError(false);
     if (editing) {
       setName(editing.name);
       setDosage(editing.dosage);
@@ -41,7 +49,6 @@ export function MedicationModal({ open, editing, onClose, onSave }: MedicationMo
       setNotes(editing.notes ?? '');
       setTrackStock(editing.trackStock);
       setRemainingDoses(editing.remainingDoses);
-      setTotalDoses(editing.totalDoses);
       setDosesPerIntake(editing.dosesPerIntake);
       setRefillThreshold(editing.refillThreshold);
     } else {
@@ -55,7 +62,6 @@ export function MedicationModal({ open, editing, onClose, onSave }: MedicationMo
       setNotes('');
       setTrackStock(true);
       setRemainingDoses(30);
-      setTotalDoses(30);
       setDosesPerIntake(1);
       setRefillThreshold(5);
     }
@@ -72,6 +78,7 @@ export function MedicationModal({ open, editing, onClose, onSave }: MedicationMo
   }, [open]);
 
   const toggleDay = (day: number) => {
+    setDaysError(false);
     setDays((prev) =>
       prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day].sort((a, b) => a - b)
     );
@@ -79,21 +86,31 @@ export function MedicationModal({ open, editing, onClose, onSave }: MedicationMo
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
+    if (days.length === 0) {
+      setDaysError(true);
+      return;
+    }
+
     const cleanedTimes = Array.from(new Set(times.filter(Boolean))).sort();
+    const safeRemaining = Math.max(0, remainingDoses);
+    const safeTotal = editing
+      ? Math.max(editing.totalDoses, safeRemaining, 1)
+      : Math.max(safeRemaining, 1);
+
     onSave({
       id: editing?.id ?? createId('med'),
       name: name.trim(),
       dosage: dosage.trim(),
       times: cleanedTimes.length > 0 ? cleanedTimes : ['08:00'],
-      days: days.length > 0 ? days : [0, 1, 2, 3, 4, 5, 6],
+      days,
       foodTiming,
       notes: notes.trim() || undefined,
       tone,
       vibrate,
       enabled: editing?.enabled ?? true,
       trackStock,
-      remainingDoses: Math.max(0, remainingDoses),
-      totalDoses: Math.max(1, totalDoses),
+      remainingDoses: safeRemaining,
+      totalDoses: safeTotal,
       dosesPerIntake: Math.max(1, dosesPerIntake),
       refillThreshold: Math.max(0, refillThreshold),
     });
@@ -101,17 +118,13 @@ export function MedicationModal({ open, editing, onClose, onSave }: MedicationMo
   };
 
   return (
-    <dialog
-      ref={dialogRef}
-      aria-labelledby="med-modal-title"
-      onClose={onClose}
-    >
+    <dialog ref={dialogRef} aria-labelledby="med-modal-title" onClose={onClose}>
       <div className="dialog-header">
         <h2 id="med-modal-title" className="dialog-title">
-          {editing ? 'Edit Medication' : 'Add Medication'}
+          {editing ? 'Edit Medicine & Alarm' : 'Add Medicine & Alarm'}
         </h2>
         <button type="button" className="icon-btn" aria-label="Close dialog" onClick={onClose}>
-          <X size={20} />
+          <X size={20} aria-hidden="true" />
         </button>
       </div>
 
@@ -119,32 +132,52 @@ export function MedicationModal({ open, editing, onClose, onSave }: MedicationMo
         <div className="dialog-body">
           <div className="grid-2">
             <div className="field">
-              <label className="field-label" htmlFor="med-name">Medication Name *</label>
+              <label className="field-label" htmlFor="med-name">
+                Medicine Name *
+              </label>
               <input
                 id="med-name"
                 className="input"
                 type="text"
                 required
-                placeholder="e.g., Metformin"
+                placeholder="e.g., Vitamin D3"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 autoFocus
               />
-              <span className="field-error">Error: Enter a medication name.</span>
+              <span className="field-error">Error: Enter a medicine name.</span>
             </div>
 
             <div className="field">
-              <label className="field-label" htmlFor="med-dosage">Dosage *</label>
+              <label className="field-label" htmlFor="med-dosage">
+                Dosage *
+              </label>
               <input
                 id="med-dosage"
                 className="input"
                 type="text"
                 required
-                placeholder="e.g., 1 tablet (500 mg)"
+                placeholder="e.g., 1 tablet"
                 value={dosage}
                 onChange={(e) => setDosage(e.target.value)}
               />
               <span className="field-error">Error: Enter dosage details.</span>
+            </div>
+          </div>
+
+          <div className="field">
+            <span className="field-label">Quick Schedule Presets</span>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {FREQUENCY_PRESETS.map((preset) => (
+                <button
+                  key={preset.label}
+                  type="button"
+                  className="btn btn--secondary btn--sm"
+                  onClick={() => setTimes(preset.times)}
+                >
+                  {preset.label}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -173,7 +206,7 @@ export function MedicationModal({ open, editing, onClose, onSave }: MedicationMo
                       aria-label={`Remove alarm time ${idx + 1}`}
                       onClick={() => setTimes(times.filter((_, i) => i !== idx))}
                     >
-                      <Trash2 size={18} />
+                      <Trash2 size={18} aria-hidden="true" />
                     </button>
                   )}
                 </div>
@@ -184,28 +217,40 @@ export function MedicationModal({ open, editing, onClose, onSave }: MedicationMo
                 onClick={() => setTimes([...times, '20:00'])}
                 style={{ alignSelf: 'flex-start' }}
               >
-                <Plus size={16} /> Add Another Alarm Time
+                <Plus size={16} aria-hidden="true" /> Add Another Time
               </button>
             </div>
           </div>
 
           <div className="field">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: 8,
+              }}
+            >
               <span className="field-label">Alarm Repeat Days</span>
               <div style={{ display: 'flex', gap: 6 }}>
                 <button
                   type="button"
                   className="btn btn--secondary btn--sm"
-                  style={{ minHeight: 32, padding: '0 10px', fontSize: '0.78rem' }}
-                  onClick={() => setDays([0, 1, 2, 3, 4, 5, 6])}
+                  onClick={() => {
+                    setDaysError(false);
+                    setDays([0, 1, 2, 3, 4, 5, 6]);
+                  }}
                 >
                   Every day
                 </button>
                 <button
                   type="button"
                   className="btn btn--secondary btn--sm"
-                  style={{ minHeight: 32, padding: '0 10px', fontSize: '0.78rem' }}
-                  onClick={() => setDays([1, 2, 3, 4, 5])}
+                  onClick={() => {
+                    setDaysError(false);
+                    setDays([1, 2, 3, 4, 5]);
+                  }}
                 >
                   Weekdays
                 </button>
@@ -224,11 +269,18 @@ export function MedicationModal({ open, editing, onClose, onSave }: MedicationMo
                 </button>
               ))}
             </div>
+            {daysError && (
+              <span style={{ fontSize: '0.82rem', color: 'var(--color-feedback-error)', fontWeight: 600 }}>
+                Error: Select at least one repeat day.
+              </span>
+            )}
           </div>
 
           <div className="grid-2">
             <div className="field">
-              <label className="field-label" htmlFor="med-food">Food Timing</label>
+              <label className="field-label" htmlFor="med-food">
+                Food Timing
+              </label>
               <select
                 id="med-food"
                 className="select"
@@ -243,7 +295,9 @@ export function MedicationModal({ open, editing, onClose, onSave }: MedicationMo
             </div>
 
             <div className="field">
-              <label className="field-label" htmlFor="med-tone">Alarm Sound</label>
+              <label className="field-label" htmlFor="med-tone">
+                Alarm Sound
+              </label>
               <div style={{ display: 'flex', gap: 6 }}>
                 <select
                   id="med-tone"
@@ -261,75 +315,92 @@ export function MedicationModal({ open, editing, onClose, onSave }: MedicationMo
                   type="button"
                   className="icon-btn"
                   aria-label="Preview alarm sound"
-                  onClick={() => alarmAudio.preview(tone, 0.85)}
+                  onClick={() => void alarmAudio.preview(tone, 0.85)}
                 >
-                  <Volume2 size={18} />
+                  <Volume2 size={18} aria-hidden="true" />
                 </button>
               </div>
             </div>
           </div>
 
-          <div className="field">
-            <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={vibrate}
-                onChange={(e) => setVibrate(e.target.checked)}
-                style={{ width: 20, height: 20 }}
-              />
-              <span className="field-label">Vibrate when alarm rings</span>
-            </label>
-          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', minHeight: 44 }}>
+            <input
+              type="checkbox"
+              checked={vibrate}
+              onChange={(e) => setVibrate(e.target.checked)}
+              style={{ width: 20, height: 20 }}
+            />
+            <span className="field-label">Vibrate when alarm rings</span>
+          </label>
 
-          <div className="field">
-            <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={trackStock}
-                onChange={(e) => setTrackStock(e.target.checked)}
-                style={{ width: 20, height: 20 }}
-              />
-              <span className="field-label">Track Pill Stock & Refill Alerts</span>
-            </label>
-          </div>
-
-          {trackStock && (
-            <div className="grid-2">
-              <div className="field">
-                <label className="field-label" htmlFor="med-remaining">Remaining Doses</label>
+          <details>
+            <summary
+              style={{
+                cursor: 'pointer',
+                fontWeight: 600,
+                fontSize: '0.9rem',
+                color: 'var(--color-brand-primary)',
+                padding: '6px 0',
+              }}
+            >
+              More Options (Pill Stock &amp; Notes)
+            </summary>
+            <div className="stack" style={{ marginTop: 10 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', minHeight: 44 }}>
                 <input
-                  id="med-remaining"
-                  className="input tabular-nums"
-                  type="number"
-                  min={0}
-                  value={remainingDoses}
-                  onChange={(e) => setRemainingDoses(Number(e.target.value))}
+                  type="checkbox"
+                  checked={trackStock}
+                  onChange={(e) => setTrackStock(e.target.checked)}
+                  style={{ width: 20, height: 20 }}
                 />
-              </div>
+                <span className="field-label">Track Pill Stock &amp; Refill Alerts</span>
+              </label>
+
+              {trackStock && (
+                <div className="grid-2">
+                  <div className="field">
+                    <label className="field-label" htmlFor="med-remaining">
+                      Remaining Doses
+                    </label>
+                    <input
+                      id="med-remaining"
+                      className="input tabular-nums"
+                      type="number"
+                      min={0}
+                      value={remainingDoses}
+                      onChange={(e) => setRemainingDoses(Number(e.target.value))}
+                    />
+                  </div>
+                  <div className="field">
+                    <label className="field-label" htmlFor="med-threshold">
+                      Refill Alert At
+                    </label>
+                    <input
+                      id="med-threshold"
+                      className="input tabular-nums"
+                      type="number"
+                      min={0}
+                      value={refillThreshold}
+                      onChange={(e) => setRefillThreshold(Number(e.target.value))}
+                    />
+                  </div>
+                </div>
+              )}
+
               <div className="field">
-                <label className="field-label" htmlFor="med-threshold">Refill Alert At</label>
-                <input
-                  id="med-threshold"
-                  className="input tabular-nums"
-                  type="number"
-                  min={0}
-                  value={refillThreshold}
-                  onChange={(e) => setRefillThreshold(Number(e.target.value))}
+                <label className="field-label" htmlFor="med-notes">
+                  Notes (Optional)
+                </label>
+                <textarea
+                  id="med-notes"
+                  className="textarea"
+                  placeholder="e.g., Take with warm water"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
                 />
               </div>
             </div>
-          )}
-
-          <div className="field">
-            <label className="field-label" htmlFor="med-notes">Notes (Optional)</label>
-            <textarea
-              id="med-notes"
-              className="textarea"
-              placeholder="e.g., Take with warm water"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-            />
-          </div>
+          </details>
         </div>
 
         <div className="dialog-footer">
@@ -337,7 +408,7 @@ export function MedicationModal({ open, editing, onClose, onSave }: MedicationMo
             Cancel
           </button>
           <button type="submit" className="btn btn--primary">
-            {editing ? 'Save Changes' : 'Save Medication'}
+            {editing ? 'Save Changes' : 'Save Medicine'}
           </button>
         </div>
       </form>

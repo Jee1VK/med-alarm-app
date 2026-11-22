@@ -13,7 +13,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   keepScreenAwake: false,
 };
 
-const SEED_MEDICATIONS: Medication[] = [
+export const SAMPLE_MEDICATIONS: Medication[] = [
   {
     id: 'med-seed-1',
     name: 'Vitamin D3 + Calcium',
@@ -26,24 +26,24 @@ const SEED_MEDICATIONS: Medication[] = [
     vibrate: true,
     enabled: true,
     trackStock: true,
-    remainingDoses: 18,
+    remainingDoses: 24,
     totalDoses: 30,
     dosesPerIntake: 1,
     refillThreshold: 5,
   },
   {
     id: 'med-seed-2',
-    name: 'Metformin',
-    dosage: '1 tablet (500 mg)',
+    name: 'Multivitamin',
+    dosage: '1 capsule',
     times: ['08:00', '20:00'],
     days: [0, 1, 2, 3, 4, 5, 6],
-    foodTiming: 'before_food',
-    notes: 'Take 15 minutes before meal.',
-    tone: 'urgent_pulse',
+    foodTiming: 'after_food',
+    notes: 'Morning and evening dose.',
+    tone: 'gentle_dawn',
     vibrate: true,
     enabled: true,
     trackStock: true,
-    remainingDoses: 4,
+    remainingDoses: 28,
     totalDoses: 30,
     dosesPerIntake: 1,
     refillThreshold: 5,
@@ -67,11 +67,11 @@ export function loadInitialData(): {
   const initialized = localStorage.getItem(KEYS.initialized);
   if (!initialized) {
     localStorage.setItem(KEYS.initialized, '1');
-    localStorage.setItem(KEYS.meds, JSON.stringify(SEED_MEDICATIONS));
+    localStorage.setItem(KEYS.meds, JSON.stringify([]));
     localStorage.setItem(KEYS.logs, JSON.stringify([]));
     localStorage.setItem(KEYS.settings, JSON.stringify(DEFAULT_SETTINGS));
     return {
-      medications: SEED_MEDICATIONS,
+      medications: [],
       logs: [],
       settings: DEFAULT_SETTINGS,
     };

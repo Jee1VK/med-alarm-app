@@ -45,19 +45,23 @@ export function foodTimingLabel(timing: FoodTiming): string {
   }
 }
 
-export function minutesUntil(hhmm: string, now: Date): number {
+/** Signed minutes from `now` until `hhmm` today (negative = overdue today). */
+export function signedMinutesUntil(hhmm: string, now: Date): number {
   const [h, m] = hhmm.split(':').map(Number);
   const target = new Date(now);
   target.setHours(h, m, 0, 0);
-  let diffMs = target.getTime() - now.getTime();
-  if (diffMs < 0) {
-    diffMs += 24 * 60 * 60 * 1000;
-  }
-  return Math.ceil(diffMs / 60000);
+  const diffMs = target.getTime() - now.getTime();
+  return Math.round(diffMs / 60000);
 }
 
 export function formatCountdown(totalMinutes: number): string {
-  if (totalMinutes <= 0) return 'Now';
+  if (totalMinutes === 0) return 'Due now';
+  if (totalMinutes < 0) {
+    const abs = Math.abs(totalMinutes);
+    const hrs = Math.floor(abs / 60);
+    const mins = abs % 60;
+    return hrs > 0 ? `${hrs}h ${mins}m overdue` : `${mins}m overdue`;
+  }
   const hrs = Math.floor(totalMinutes / 60);
   const mins = totalMinutes % 60;
   if (hrs === 0) return `in ${mins}m`;
