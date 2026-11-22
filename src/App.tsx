@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { type ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Bell,
@@ -6,6 +6,7 @@ import {
   CalendarClock,
   Check,
   Download,
+  FileSpreadsheet,
   History,
   Moon,
   Pencil,
@@ -15,6 +16,7 @@ import {
   RotateCcw,
   Sun,
   Trash2,
+  Upload,
   Volume2,
 } from 'lucide-react';
 import { MedicationModal } from './components/MedicationModal';
@@ -22,6 +24,7 @@ import { RingingModal } from './components/RingingModal';
 import { useAlarmScheduler } from './hooks/useAlarmScheduler';
 import type { AppSettings, LogEntry, Medication, RingingTarget } from './types';
 import { alarmAudio } from './utils/alarmAudio';
+import { exportBackupJson, exportHistoryCsv, parseBackupJson } from './utils/exportData';
 import {
   SAMPLE_MEDICATIONS,
   createId,
@@ -31,12 +34,16 @@ import {
   saveSettings,
 } from './utils/storage';
 import {
+  DAY_LABELS,
+  daysUntilExpiry,
   foodTimingLabel,
   formatCountdown,
   formatDaysSummary,
   formatTime12h,
+  getMedicationTimes,
   signedMinutesUntil,
   toDateKey,
+  toHHMM,
 } from './utils/time';
 
 type Tab = 'today' | 'medications' | 'history';
@@ -59,6 +66,8 @@ export function App() {
     return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   });
   const [confirmClearLog, setConfirmClearLog] = useState(false);
+  const [restoreStatus, setRestoreStatus] = useState<string | null>(null);
+  const restoreInputRef = useRef<HTMLInputElement>(null);
 
   const [audioUnlocked, setAudioUnlocked] = useState(false);
   const [notifPermission, setNotifPermission] = useState<NotificationPermission | 'unsupported'>(() =>
@@ -71,12 +80,10 @@ export function App() {
   );
   const [showIosInstallTip, setShowIosInstallTip] = useState(false);
 
-  // Add/Edit Medication Modal & Delete Confirm
   const [medModalOpen, setMedModalOpen] = useState(false);
   const [editingMed, setEditingMed] = useState<Medication | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
-  // Persist changes
   useEffect(() => saveMedications(medications), [medications]);
   useEffect(() => saveLogs(logs), [logs]);
   useEffect(() => saveSettings(settings), [settings]);
@@ -131,7 +138,6 @@ export function App() {
   const todayKey = toDateKey(now);
   const todayDow = now.getDay();
 
-  // Unlock audio on first pointer interaction
   useEffect(() => {
     const unlockOnce = async () => {
       const ok = await alarmAudio.unlock();
@@ -176,8 +182,14 @@ export function App() {
     setLogs((prev) => [entry, ...prev].slice(0, 300));
   };
 
-  const markMedicationTaken = (med: Medication, scheduledTime: string) => {
-    logAction(med.id, med.name, med.dosage, scheduledTime, 'taken');
+  const markMedicationTaken = (med: Medication, scheduledTime: string, isExtra = false) => {
+    logAction(
+      med.id,
+      med.name,
+      isExtra ? `${med.dosage} (Extra / As Needed)` : med.dosage,
+      scheduledTime,
+      'taken'
+    );
     if (med.trackStock) {
       setMedications((prev) =>
         prev.map((m) =>
@@ -238,7 +250,24 @@ export function App() {
     snoozeCurrentRing(minutes);
   };
 
-  // Today's chronological medication alarms
+  const handleRestoreFile = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const restored = parseBackupJson(text);
+      setMedications(restored.medications);
+      setLogs(restored.logs);
+      setSettings(restored.settings);
+      setRestoreStatus(`Restored ${restored.medications.length} medicine(s) and ${restored.logs.length} log entries.`);
+    } catch {
+      setRestoreStatus('Could not restore: invalid MedClock JSON backup file.');
+    } finally {
+      e.target.value = '';
+    }
+  };
+
+  // Today's chronological scheduled medication alarms
   const todaySchedule = useMemo(() => {
     const rows: {
       key: string;
@@ -248,8 +277,8 @@ export function App() {
     }[] = [];
 
     for (const med of medications) {
-      if (!med.enabled || !med.days.includes(todayDow)) continue;
-      for (const t of med.times) {
+      if (!med.enabled || med.scheduleMode === 'prn' || !med.days.includes(todayDow)) continue;
+      for (const t of getMedicationTimes(med)) {
         const log = logs.find(
           (l) =>
             l.itemId === med.id &&
@@ -268,6 +297,11 @@ export function App() {
 
     return rows.sort((a, b) => a.time.localeCompare(b.time));
   }, [medications, logs, todayDow, todayKey]);
+
+  const prnMeds = useMemo(
+    () => medications.filter((m) => m.enabled && m.scheduleMode === 'prn'),
+    [medications]
+  );
 
   const nextUpcoming = useMemo(() => {
     const pending = todaySchedule
@@ -294,6 +328,14 @@ export function App() {
     [medications]
   );
 
+  const expiringMeds = useMemo(
+    () =>
+      medications
+        .map((m) => ({ med: m, daysLeft: daysUntilExpiry(m.expiryDate, now) }))
+        .filter((x): x is { med: Medication; daysLeft: number } => x.daysLeft !== null && x.daysLeft <= 14),
+    [medications, now]
+  );
+
   const adherenceStats = useMemo(() => {
     const medLogs = logs.filter((l) => l.action === 'taken' || l.action === 'skipped');
     const taken = medLogs.filter((l) => l.action === 'taken').length;
@@ -302,6 +344,32 @@ export function App() {
     const pct = total === 0 ? 100 : Math.round((taken / total) * 100);
     return { taken, skipped, total, pct };
   }, [logs]);
+
+  // Last 7 days visual adherence strip
+  const weekStrip = useMemo(() => {
+    const days: { dateKey: string; label: string; dayNum: number; status: 'good' | 'partial' | 'missed' | 'none' }[] = [];
+    for (let offset = 6; offset >= 0; offset--) {
+      const d = new Date(now);
+      d.setDate(now.getDate() - offset);
+      const key = toDateKey(d);
+      const dayLogs = logs.filter((l) => l.dateKey === key && (l.action === 'taken' || l.action === 'skipped'));
+      const taken = dayLogs.filter((l) => l.action === 'taken').length;
+      const skipped = dayLogs.filter((l) => l.action === 'skipped').length;
+      let status: 'good' | 'partial' | 'missed' | 'none' = 'none';
+      if (taken + skipped > 0) {
+        if (skipped === 0) status = 'good';
+        else if (taken > 0) status = 'partial';
+        else status = 'missed';
+      }
+      days.push({
+        dateKey: key,
+        label: DAY_LABELS[d.getDay()],
+        dayNum: d.getDate(),
+        status,
+      });
+    }
+    return days;
+  }, [logs, now]);
 
   const formattedClock = now.toLocaleTimeString([], {
     hour: '2-digit',
@@ -369,7 +437,7 @@ export function App() {
                 itemId: 'test',
                 title: 'Test Medication Alarm',
                 subtitle: '1 tablet • Sound & Snooze Check',
-                scheduledTime: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
+                scheduledTime: toHHMM(now),
                 tone: 'temple_chime',
                 vibrate: true,
                 foodTiming: 'after_food',
@@ -513,6 +581,33 @@ export function App() {
             </div>
           )}
 
+          {expiringMeds.length > 0 && (
+            <div className="banner banner--warning" role="alert">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <AlertTriangle size={18} aria-hidden="true" />
+                <span>
+                  <strong>Expiry Alert:</strong>{' '}
+                  {expiringMeds
+                    .map(({ med, daysLeft }) =>
+                      daysLeft < 0
+                        ? `${med.name} (expired)`
+                        : daysLeft === 0
+                          ? `${med.name} (expires today)`
+                          : `${med.name} (expires in ${daysLeft}d)`
+                    )
+                    .join(', ')}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="btn btn--secondary btn--sm"
+                onClick={() => setTab('medications')}
+              >
+                Check Meds
+              </button>
+            </div>
+          )}
+
           <div className="section-header">
             <h2 className="section-title">Today&apos;s Medication Alarms</h2>
             <button
@@ -546,13 +641,16 @@ export function App() {
             <div className="stack">
               {todaySchedule.map(({ key, time, med, status }) => {
                 const isOverdue = status === 'pending' && signedMinutesUntil(time, now) < 0;
+                const tag = med.colorTag ?? 'sky';
                 return (
                   <article
                     key={key}
+                    data-tag={tag}
                     className={`item-card ${status !== 'pending' ? 'item-card--done' : ''}`}
                   >
                     <div className="item-meta">
                       <div className="item-title-row">
+                        <span className={`tag-dot tag-dot--${tag}`} aria-hidden="true" />
                         <span
                           className="tabular-nums"
                           style={{ fontWeight: 700, color: 'var(--color-brand-primary)' }}
@@ -599,6 +697,39 @@ export function App() {
               })}
             </div>
           )}
+
+          {prnMeds.length > 0 && (
+            <>
+              <div className="section-header">
+                <h2 className="section-title">As Needed (PRN)</h2>
+              </div>
+              <div className="stack">
+                {prnMeds.map((med) => {
+                  const tag = med.colorTag ?? 'sky';
+                  return (
+                    <article key={med.id} data-tag={tag} className="item-card">
+                      <div className="item-meta">
+                        <div className="item-title-row">
+                          <span className={`tag-dot tag-dot--${tag}`} aria-hidden="true" />
+                          <h3 className="item-title">{med.name}</h3>
+                          <span className="badge badge--blue">As Needed</span>
+                          <span className="badge badge--gold">{foodTimingLabel(med.foodTiming)}</span>
+                        </div>
+                        <div className="item-sub">{med.dosage}</div>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn--success btn--sm"
+                        onClick={() => markMedicationTaken(med, toHHMM(now), true)}
+                      >
+                        <Plus size={15} aria-hidden="true" /> Log Dose
+                      </button>
+                    </article>
+                  );
+                })}
+              </div>
+            </>
+          )}
         </main>
       )}
 
@@ -636,22 +767,43 @@ export function App() {
             <div className="stack">
               {medications.map((med) => {
                 const isLow = med.trackStock && med.remainingDoses <= med.refillThreshold;
+                const expDays = daysUntilExpiry(med.expiryDate, now);
                 const stockPct =
                   med.totalDoses > 0 ? Math.min(100, (med.remainingDoses / med.totalDoses) * 100) : 0;
+                const tag = med.colorTag ?? 'sky';
+                const expandedTimes = getMedicationTimes(med);
+
                 return (
-                  <article key={med.id} className={`item-card ${!med.enabled ? 'item-card--dim' : ''}`}>
+                  <article
+                    key={med.id}
+                    data-tag={tag}
+                    className={`item-card ${!med.enabled ? 'item-card--dim' : ''}`}
+                  >
                     <div className="item-meta">
                       <div className="item-title-row">
+                        <span className={`tag-dot tag-dot--${tag}`} aria-hidden="true" />
                         <h3 className="item-title">{med.name}</h3>
                         <span className="badge badge--gold">{foodTimingLabel(med.foodTiming)}</span>
                         {isLow && <span className="badge badge--red">Refill Low</span>}
+                        {expDays !== null && expDays <= 14 && (
+                          <span className="badge badge--red">
+                            {expDays < 0 ? 'Expired' : expDays === 0 ? 'Expires Today' : `Expires in ${expDays}d`}
+                          </span>
+                        )}
                       </div>
                       <div className="item-sub">
                         {med.dosage} •{' '}
-                        <span className="tabular-nums">
-                          {med.times.map((t) => formatTime12h(t)).join(', ')}
-                        </span>{' '}
-                        • {formatDaysSummary(med.days)}
+                        {med.scheduleMode === 'prn' ? (
+                          <span>As Needed (No Alarm)</span>
+                        ) : (
+                          <>
+                            <span className="tabular-nums">
+                              {expandedTimes.map((t) => formatTime12h(t)).join(', ')}
+                            </span>{' '}
+                            {med.scheduleMode === 'interval' ? `(Every ${med.intervalHours}h) ` : ''}•{' '}
+                            {formatDaysSummary(med.days)}
+                          </>
+                        )}
                       </div>
                       {med.trackStock && (
                         <div style={{ marginTop: 4 }}>
@@ -670,6 +822,14 @@ export function App() {
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        className="btn btn--success btn--sm"
+                        title="Log 1 extra dose taken now"
+                        onClick={() => markMedicationTaken(med, toHHMM(now), true)}
+                      >
+                        <Plus size={14} aria-hidden="true" /> +1 Taken
+                      </button>
                       {med.trackStock && (
                         <button
                           type="button"
@@ -692,28 +852,30 @@ export function App() {
                           <RefreshCw size={14} aria-hidden="true" /> +30
                         </button>
                       )}
-                      <button
-                        type="button"
-                        className="icon-btn"
-                        aria-label={`Test alarm for ${med.name}`}
-                        title={`Test alarm for ${med.name}`}
-                        onClick={() => {
-                          setAudioUnlocked(true);
-                          triggerTestRing({
-                            key: `med-test-${med.id}-${Date.now()}`,
-                            itemId: med.id,
-                            title: med.name,
-                            subtitle: med.dosage,
-                            scheduledTime: med.times[0] ?? '08:00',
-                            tone: med.tone,
-                            vibrate: med.vibrate,
-                            foodTiming: med.foodTiming,
-                            notes: med.notes,
-                          });
-                        }}
-                      >
-                        <BellRing size={17} aria-hidden="true" />
-                      </button>
+                      {med.scheduleMode !== 'prn' && (
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          aria-label={`Test alarm for ${med.name}`}
+                          title={`Test alarm for ${med.name}`}
+                          onClick={() => {
+                            setAudioUnlocked(true);
+                            triggerTestRing({
+                              key: `med-test-${med.id}-${Date.now()}`,
+                              itemId: med.id,
+                              title: med.name,
+                              subtitle: med.dosage,
+                              scheduledTime: expandedTimes[0] ?? '08:00',
+                              tone: med.tone,
+                              vibrate: med.vibrate,
+                              foodTiming: med.foodTiming,
+                              notes: med.notes,
+                            });
+                          }}
+                        >
+                          <BellRing size={17} aria-hidden="true" />
+                        </button>
+                      )}
                       <button
                         type="button"
                         className="icon-btn"
@@ -814,30 +976,6 @@ export function App() {
           </div>
 
           <div className="card" style={{ marginBottom: 14 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label htmlFor="alarm-volume" className="field-label">
-                  Alarm Volume
-                </label>
-                <span className="tabular-nums" style={{ fontWeight: 700 }}>
-                  {Math.round(settings.defaultVolume * 100)}%
-                </span>
-              </div>
-              <input
-                id="alarm-volume"
-                type="range"
-                min={0.2}
-                max={1}
-                step={0.1}
-                value={settings.defaultVolume}
-                onChange={(e) =>
-                  setSettings((prev) => ({ ...prev, defaultVolume: Number(e.target.value) }))
-                }
-              />
-            </div>
-          </div>
-
-          <div className="card" style={{ marginBottom: 14 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
               <div>
                 <div style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>
@@ -858,6 +996,81 @@ export function App() {
                   <strong className="tabular-nums">{adherenceStats.skipped}</strong> Skipped
                 </div>
               </div>
+            </div>
+
+            <div className="week-strip" aria-label="Last 7 days adherence">
+              {weekStrip.map((day) => (
+                <div key={day.dateKey} className="week-day">
+                  <span className="week-day__name">{day.label}</span>
+                  <span className="week-day__num tabular-nums">{day.dayNum}</span>
+                  <span
+                    className={`week-dot week-dot--${day.status}`}
+                    title={`${day.dateKey}: ${day.status === 'none' ? 'no activity' : day.status}`}
+                    aria-label={`${day.label} ${day.dayNum}: ${day.status}`}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="card" style={{ marginBottom: 14 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label htmlFor="alarm-volume" className="field-label">
+                  Alarm Volume
+                </label>
+                <span className="tabular-nums" style={{ fontWeight: 700 }}>
+                  {Math.round(settings.defaultVolume * 100)}%
+                </span>
+              </div>
+              <input
+                id="alarm-volume"
+                type="range"
+                min={0.2}
+                max={1}
+                step={0.1}
+                value={settings.defaultVolume}
+                onChange={(e) =>
+                  setSettings((prev) => ({ ...prev, defaultVolume: Number(e.target.value) }))
+                }
+              />
+
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, paddingTop: 6, borderTop: '1px solid var(--color-border-subtle)' }}>
+                <button
+                  type="button"
+                  className="btn btn--secondary btn--sm"
+                  disabled={logs.length === 0}
+                  onClick={() => exportHistoryCsv(logs)}
+                >
+                  <FileSpreadsheet size={16} aria-hidden="true" /> Export CSV
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--secondary btn--sm"
+                  onClick={() => exportBackupJson(medications, logs, settings)}
+                >
+                  <Download size={16} aria-hidden="true" /> Download Backup
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--secondary btn--sm"
+                  onClick={() => restoreInputRef.current?.click()}
+                >
+                  <Upload size={16} aria-hidden="true" /> Restore Backup
+                </button>
+                <input
+                  ref={restoreInputRef}
+                  type="file"
+                  accept="application/json,.json"
+                  style={{ display: 'none' }}
+                  onChange={handleRestoreFile}
+                />
+              </div>
+              {restoreStatus && (
+                <div style={{ fontSize: '0.85rem', color: 'var(--color-brand-primary)', fontWeight: 600 }}>
+                  {restoreStatus}
+                </div>
+              )}
             </div>
           </div>
 

@@ -1,6 +1,6 @@
 import { type FormEvent, useEffect, useRef, useState } from 'react';
-import { Plus, Trash2, Volume2, X } from 'lucide-react';
-import type { AlarmTone, FoodTiming, Medication } from '../types';
+import { Check, Plus, Trash2, Volume2, X } from 'lucide-react';
+import type { AlarmTone, FoodTiming, MedColorTag, Medication, ScheduleMode } from '../types';
 import { alarmAudio } from '../utils/alarmAudio';
 import { createId } from '../utils/storage';
 import { DAY_LABELS } from '../utils/time';
@@ -19,15 +19,28 @@ const FREQUENCY_PRESETS: { label: string; times: string[] }[] = [
   { label: 'Bedtime', times: ['22:00'] },
 ];
 
+const COLOR_TAGS: { id: MedColorTag; label: string; hex: string }[] = [
+  { id: 'sky', label: 'Sky Blue', hex: '#0284C7' },
+  { id: 'emerald', label: 'Emerald Green', hex: '#059669' },
+  { id: 'amber', label: 'Amber Gold', hex: '#D97706' },
+  { id: 'rose', label: 'Rose Pink', hex: '#E11D48' },
+  { id: 'indigo', label: 'Indigo', hex: '#4F46E5' },
+];
+
 export function MedicationModal({ open, editing, onClose, onSave }: MedicationModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   const [name, setName] = useState('');
   const [dosage, setDosage] = useState('1 tablet');
+  const [scheduleMode, setScheduleMode] = useState<ScheduleMode>('fixed');
   const [times, setTimes] = useState<string[]>(['08:00']);
+  const [intervalHours, setIntervalHours] = useState(8);
+  const [intervalStart, setIntervalStart] = useState('08:00');
   const [days, setDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
   const [daysError, setDaysError] = useState(false);
   const [foodTiming, setFoodTiming] = useState<FoodTiming>('after_food');
+  const [colorTag, setColorTag] = useState<MedColorTag>('sky');
+  const [expiryDate, setExpiryDate] = useState('');
   const [tone, setTone] = useState<AlarmTone>('temple_chime');
   const [vibrate, setVibrate] = useState(true);
   const [notes, setNotes] = useState('');
@@ -41,9 +54,14 @@ export function MedicationModal({ open, editing, onClose, onSave }: MedicationMo
     if (editing) {
       setName(editing.name);
       setDosage(editing.dosage);
+      setScheduleMode(editing.scheduleMode ?? 'fixed');
       setTimes(editing.times.length > 0 ? editing.times : ['08:00']);
+      setIntervalHours(editing.intervalHours ?? 8);
+      setIntervalStart(editing.intervalStart ?? '08:00');
       setDays(editing.days);
       setFoodTiming(editing.foodTiming);
+      setColorTag(editing.colorTag ?? 'sky');
+      setExpiryDate(editing.expiryDate ?? '');
       setTone(editing.tone);
       setVibrate(editing.vibrate ?? true);
       setNotes(editing.notes ?? '');
@@ -54,9 +72,14 @@ export function MedicationModal({ open, editing, onClose, onSave }: MedicationMo
     } else {
       setName('');
       setDosage('1 tablet');
+      setScheduleMode('fixed');
       setTimes(['08:00']);
+      setIntervalHours(8);
+      setIntervalStart('08:00');
       setDays([0, 1, 2, 3, 4, 5, 6]);
       setFoodTiming('after_food');
+      setColorTag('sky');
+      setExpiryDate('');
       setTone('temple_chime');
       setVibrate(true);
       setNotes('');
@@ -86,7 +109,7 @@ export function MedicationModal({ open, editing, onClose, onSave }: MedicationMo
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (days.length === 0) {
+    if (scheduleMode !== 'prn' && days.length === 0) {
       setDaysError(true);
       return;
     }
@@ -101,9 +124,14 @@ export function MedicationModal({ open, editing, onClose, onSave }: MedicationMo
       id: editing?.id ?? createId('med'),
       name: name.trim(),
       dosage: dosage.trim(),
+      scheduleMode,
       times: cleanedTimes.length > 0 ? cleanedTimes : ['08:00'],
-      days,
+      intervalHours: scheduleMode === 'interval' ? intervalHours : undefined,
+      intervalStart: scheduleMode === 'interval' ? intervalStart : undefined,
+      days: scheduleMode === 'prn' ? [0, 1, 2, 3, 4, 5, 6] : days,
       foodTiming,
+      colorTag,
+      expiryDate: expiryDate || undefined,
       notes: notes.trim() || undefined,
       tone,
       vibrate,
@@ -166,115 +194,190 @@ export function MedicationModal({ open, editing, onClose, onSave }: MedicationMo
           </div>
 
           <div className="field">
-            <span className="field-label">Quick Schedule Presets</span>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {FREQUENCY_PRESETS.map((preset) => (
+            <span className="field-label">Color Tag</span>
+            <div className="color-swatch-row" role="group" aria-label="Medicine color tag">
+              {COLOR_TAGS.map((c) => (
                 <button
-                  key={preset.label}
+                  key={c.id}
                   type="button"
-                  className="btn btn--secondary btn--sm"
-                  onClick={() => setTimes(preset.times)}
+                  className="color-swatch"
+                  style={{ background: c.hex }}
+                  aria-label={c.label}
+                  aria-pressed={colorTag === c.id}
+                  onClick={() => setColorTag(c.id)}
                 >
-                  {preset.label}
+                  {colorTag === c.id && <Check size={18} aria-hidden="true" />}
                 </button>
               ))}
             </div>
           </div>
 
           <div className="field">
-            <span className="field-label">Linked Alarm Times</span>
-            <div className="stack">
-              {times.map((t, idx) => (
-                <div key={idx} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <input
-                    className="input tabular-nums"
-                    type="time"
-                    required
-                    aria-label={`Alarm time ${idx + 1}`}
-                    value={t}
-                    onChange={(e) => {
-                      const next = [...times];
-                      next[idx] = e.target.value;
-                      setTimes(next);
-                    }}
-                    style={{ flex: 1 }}
-                  />
-                  {times.length > 1 && (
-                    <button
-                      type="button"
-                      className="icon-btn"
-                      aria-label={`Remove alarm time ${idx + 1}`}
-                      onClick={() => setTimes(times.filter((_, i) => i !== idx))}
-                    >
-                      <Trash2 size={18} aria-hidden="true" />
-                    </button>
-                  )}
-                </div>
-              ))}
-              <button
-                type="button"
-                className="btn btn--secondary btn--sm"
-                onClick={() => setTimes([...times, '20:00'])}
-                style={{ alignSelf: 'flex-start' }}
-              >
-                <Plus size={16} aria-hidden="true" /> Add Another Time
-              </button>
-            </div>
-          </div>
-
-          <div className="field">
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                flexWrap: 'wrap',
-                gap: 8,
-              }}
+            <label className="field-label" htmlFor="med-schedule-mode">
+              Alarm Type
+            </label>
+            <select
+              id="med-schedule-mode"
+              className="select"
+              value={scheduleMode}
+              onChange={(e) => setScheduleMode(e.target.value as ScheduleMode)}
             >
-              <span className="field-label">Alarm Repeat Days</span>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <button
-                  type="button"
-                  className="btn btn--secondary btn--sm"
-                  onClick={() => {
-                    setDaysError(false);
-                    setDays([0, 1, 2, 3, 4, 5, 6]);
-                  }}
+              <option value="fixed">Fixed Times Daily (e.g., 8:00 AM, 8:00 PM)</option>
+              <option value="interval">Every X Hours (e.g., Every 6 or 8 hours)</option>
+              <option value="prn">As Needed / PRN (No alarm, log manually)</option>
+            </select>
+          </div>
+
+          {scheduleMode === 'fixed' && (
+            <>
+              <div className="field">
+                <span className="field-label">Quick Schedule Presets</span>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {FREQUENCY_PRESETS.map((preset) => (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      className="btn btn--secondary btn--sm"
+                      onClick={() => setTimes(preset.times)}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="field">
+                <span className="field-label">Linked Alarm Times</span>
+                <div className="stack">
+                  {times.map((t, idx) => (
+                    <div key={idx} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <input
+                        className="input tabular-nums"
+                        type="time"
+                        required
+                        aria-label={`Alarm time ${idx + 1}`}
+                        value={t}
+                        onChange={(e) => {
+                          const next = [...times];
+                          next[idx] = e.target.value;
+                          setTimes(next);
+                        }}
+                        style={{ flex: 1 }}
+                      />
+                      {times.length > 1 && (
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          aria-label={`Remove alarm time ${idx + 1}`}
+                          onClick={() => setTimes(times.filter((_, i) => i !== idx))}
+                        >
+                          <Trash2 size={18} aria-hidden="true" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    className="btn btn--secondary btn--sm"
+                    onClick={() => setTimes([...times, '20:00'])}
+                    style={{ alignSelf: 'flex-start' }}
+                  >
+                    <Plus size={16} aria-hidden="true" /> Add Another Time
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+
+          {scheduleMode === 'interval' && (
+            <div className="grid-2">
+              <div className="field">
+                <label className="field-label" htmlFor="med-interval-hours">
+                  Repeat Every
+                </label>
+                <select
+                  id="med-interval-hours"
+                  className="select"
+                  value={intervalHours}
+                  onChange={(e) => setIntervalHours(Number(e.target.value))}
                 >
-                  Every day
-                </button>
-                <button
-                  type="button"
-                  className="btn btn--secondary btn--sm"
-                  onClick={() => {
-                    setDaysError(false);
-                    setDays([1, 2, 3, 4, 5]);
-                  }}
-                >
-                  Weekdays
-                </button>
+                  <option value={4}>Every 4 hours</option>
+                  <option value={6}>Every 6 hours</option>
+                  <option value={8}>Every 8 hours</option>
+                  <option value={12}>Every 12 hours</option>
+                </select>
+              </div>
+              <div className="field">
+                <label className="field-label" htmlFor="med-interval-start">
+                  First Dose At
+                </label>
+                <input
+                  id="med-interval-start"
+                  className="input tabular-nums"
+                  type="time"
+                  required
+                  value={intervalStart}
+                  onChange={(e) => setIntervalStart(e.target.value)}
+                />
               </div>
             </div>
-            <div className="days-grid" role="group" aria-label="Repeat days">
-              {DAY_LABELS.map((label, idx) => (
-                <button
-                  key={label}
-                  type="button"
-                  className="day-chip"
-                  aria-pressed={days.includes(idx)}
-                  onClick={() => toggleDay(idx)}
-                >
-                  {label}
-                </button>
-              ))}
+          )}
+
+          {scheduleMode !== 'prn' && (
+            <div className="field">
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: 8,
+                }}
+              >
+                <span className="field-label">Alarm Repeat Days</span>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button
+                    type="button"
+                    className="btn btn--secondary btn--sm"
+                    onClick={() => {
+                      setDaysError(false);
+                      setDays([0, 1, 2, 3, 4, 5, 6]);
+                    }}
+                  >
+                    Every day
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--secondary btn--sm"
+                    onClick={() => {
+                      setDaysError(false);
+                      setDays([1, 2, 3, 4, 5]);
+                    }}
+                  >
+                    Weekdays
+                  </button>
+                </div>
+              </div>
+              <div className="days-grid" role="group" aria-label="Repeat days">
+                {DAY_LABELS.map((label, idx) => (
+                  <button
+                    key={label}
+                    type="button"
+                    className="day-chip"
+                    aria-pressed={days.includes(idx)}
+                    onClick={() => toggleDay(idx)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {daysError && (
+                <span style={{ fontSize: '0.82rem', color: 'var(--color-feedback-error)', fontWeight: 600 }}>
+                  Error: Select at least one repeat day.
+                </span>
+              )}
             </div>
-            {daysError && (
-              <span style={{ fontSize: '0.82rem', color: 'var(--color-feedback-error)', fontWeight: 600 }}>
-                Error: Select at least one repeat day.
-              </span>
-            )}
-          </div>
+          )}
 
           <div className="grid-2">
             <div className="field">
@@ -294,44 +397,48 @@ export function MedicationModal({ open, editing, onClose, onSave }: MedicationMo
               </select>
             </div>
 
-            <div className="field">
-              <label className="field-label" htmlFor="med-tone">
-                Alarm Sound
-              </label>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <select
-                  id="med-tone"
-                  className="select"
-                  style={{ flex: 1 }}
-                  value={tone}
-                  onChange={(e) => setTone(e.target.value as AlarmTone)}
-                >
-                  <option value="temple_chime">Temple Chime</option>
-                  <option value="classic_bell">Classic Bell</option>
-                  <option value="urgent_pulse">Urgent Pulse</option>
-                  <option value="gentle_dawn">Gentle Dawn</option>
-                </select>
-                <button
-                  type="button"
-                  className="icon-btn"
-                  aria-label="Preview alarm sound"
-                  onClick={() => void alarmAudio.preview(tone, 0.85)}
-                >
-                  <Volume2 size={18} aria-hidden="true" />
-                </button>
+            {scheduleMode !== 'prn' && (
+              <div className="field">
+                <label className="field-label" htmlFor="med-tone">
+                  Alarm Sound
+                </label>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <select
+                    id="med-tone"
+                    className="select"
+                    style={{ flex: 1 }}
+                    value={tone}
+                    onChange={(e) => setTone(e.target.value as AlarmTone)}
+                  >
+                    <option value="temple_chime">Temple Chime</option>
+                    <option value="classic_bell">Classic Bell</option>
+                    <option value="urgent_pulse">Urgent Pulse</option>
+                    <option value="gentle_dawn">Gentle Dawn</option>
+                  </select>
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    aria-label="Preview alarm sound"
+                    onClick={() => void alarmAudio.preview(tone, 0.85)}
+                  >
+                    <Volume2 size={18} aria-hidden="true" />
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
-          <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', minHeight: 44 }}>
-            <input
-              type="checkbox"
-              checked={vibrate}
-              onChange={(e) => setVibrate(e.target.checked)}
-              style={{ width: 20, height: 20 }}
-            />
-            <span className="field-label">Vibrate when alarm rings</span>
-          </label>
+          {scheduleMode !== 'prn' && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', minHeight: 44 }}>
+              <input
+                type="checkbox"
+                checked={vibrate}
+                onChange={(e) => setVibrate(e.target.checked)}
+                style={{ width: 20, height: 20 }}
+              />
+              <span className="field-label">Vibrate when alarm rings</span>
+            </label>
+          )}
 
           <details>
             <summary
@@ -343,7 +450,7 @@ export function MedicationModal({ open, editing, onClose, onSave }: MedicationMo
                 padding: '6px 0',
               }}
             >
-              More Options (Pill Stock &amp; Notes)
+              More Options (Pill Stock, Expiry Date &amp; Notes)
             </summary>
             <div className="stack" style={{ marginTop: 10 }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', minHeight: 44 }}>
@@ -386,6 +493,19 @@ export function MedicationModal({ open, editing, onClose, onSave }: MedicationMo
                   </div>
                 </div>
               )}
+
+              <div className="field">
+                <label className="field-label" htmlFor="med-expiry">
+                  Expiry Date (Optional)
+                </label>
+                <input
+                  id="med-expiry"
+                  className="input tabular-nums"
+                  type="date"
+                  value={expiryDate}
+                  onChange={(e) => setExpiryDate(e.target.value)}
+                />
+              </div>
 
               <div className="field">
                 <label className="field-label" htmlFor="med-notes">

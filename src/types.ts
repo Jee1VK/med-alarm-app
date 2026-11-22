@@ -2,13 +2,22 @@ export type FoodTiming = 'before_food' | 'after_food' | 'with_food' | 'anytime';
 
 export type AlarmTone = 'temple_chime' | 'classic_bell' | 'urgent_pulse' | 'gentle_dawn';
 
+export type ScheduleMode = 'fixed' | 'interval' | 'prn';
+
+export type MedColorTag = 'sky' | 'emerald' | 'amber' | 'rose' | 'indigo';
+
 export interface Medication {
   id: string;
   name: string;
   dosage: string; // e.g., "1 tablet (500 mg)"
-  times: string[]; // ["08:00", "20:00"] 24h HH:MM
+  scheduleMode: ScheduleMode;
+  times: string[]; // ["08:00", "20:00"] 24h HH:MM (used when scheduleMode === 'fixed')
+  intervalHours?: number; // e.g. 4, 6, 8, 12 (used when scheduleMode === 'interval')
+  intervalStart?: string; // HH:MM (used when scheduleMode === 'interval')
   days: number[]; // 0=Sun .. 6=Sat
   foodTiming: FoodTiming;
+  colorTag?: MedColorTag;
+  expiryDate?: string; // YYYY-MM-DD
   notes?: string;
   tone: AlarmTone;
   vibrate: boolean;

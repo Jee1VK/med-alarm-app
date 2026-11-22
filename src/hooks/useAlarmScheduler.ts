@@ -7,7 +7,7 @@ import type {
   SnoozedItem,
 } from '../types';
 import { alarmAudio } from '../utils/alarmAudio';
-import { toDateKey } from '../utils/time';
+import { getMedicationTimes, toDateKey } from '../utils/time';
 
 interface SchedulerProps {
   medications: Medication[];
@@ -116,7 +116,7 @@ export function useAlarmScheduler({
         if (!med.enabled) continue;
         if (!med.days.includes(dayOfWeek)) continue;
 
-        for (const time of med.times) {
+        for (const time of getMedicationTimes(med)) {
           const schedMs = scheduledTimestampForToday(current, time);
           const elapsedMs = nowMs - schedMs;
           if (elapsedMs < 0 || elapsedMs > CATCH_UP_WINDOW_MS) continue;

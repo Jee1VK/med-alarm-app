@@ -883,3 +883,87 @@ dialog::backdrop {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Medicine Color Tags */
+.item-card[data-tag="sky"] { border-left-color: #0284C7; }
+.item-card[data-tag="emerald"] { border-left-color: #059669; }
+.item-card[data-tag="amber"] { border-left-color: #D97706; }
+.item-card[data-tag="rose"] { border-left-color: #E11D48; }
+.item-card[data-tag="indigo"] { border-left-color: #4F46E5; }
+
+.tag-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.tag-dot--sky { background: #0284C7; }
+.tag-dot--emerald { background: #059669; }
+.tag-dot--amber { background: #D97706; }
+.tag-dot--rose { background: #E11D48; }
+.tag-dot--indigo { background: #4F46E5; }
+
+.color-swatch-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.color-swatch {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  color: #FFFFFF;
+}
+
+.color-swatch[aria-pressed="true"] {
+  border-color: var(--color-text-primary);
+  box-shadow: 0 0 0 2px var(--color-surface-card) inset;
+}
+
+/* 7-Day Adherence Strip */
+.week-strip {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.week-day {
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-badge);
+  padding: 8px 4px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.week-day__name {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.week-day__num {
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.week-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.week-dot--good { background: var(--color-feedback-success); }
+.week-dot--partial { background: var(--color-feedback-warning); }
+.week-dot--missed { background: var(--color-feedback-error); }
+.week-dot--none { background: var(--color-border-subtle); }

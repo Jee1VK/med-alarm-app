@@ -18,9 +18,11 @@ export const SAMPLE_MEDICATIONS: Medication[] = [
     id: 'med-seed-1',
     name: 'Vitamin D3 + Calcium',
     dosage: '1 tablet (1000 IU)',
+    scheduleMode: 'fixed',
     times: ['08:30'],
     days: [0, 1, 2, 3, 4, 5, 6],
     foodTiming: 'after_food',
+    colorTag: 'amber',
     notes: 'Take with a full glass of water after breakfast.',
     tone: 'temple_chime',
     vibrate: true,
@@ -35,9 +37,11 @@ export const SAMPLE_MEDICATIONS: Medication[] = [
     id: 'med-seed-2',
     name: 'Multivitamin',
     dosage: '1 capsule',
+    scheduleMode: 'fixed',
     times: ['08:00', '20:00'],
     days: [0, 1, 2, 3, 4, 5, 6],
     foodTiming: 'after_food',
+    colorTag: 'emerald',
     notes: 'Morning and evening dose.',
     tone: 'gentle_dawn',
     vibrate: true,
@@ -78,9 +82,10 @@ export function loadInitialData(): {
   }
 
   const rawMeds = safeParse<Medication[]>(localStorage.getItem(KEYS.meds), []);
-  // Ensure backward compatibility for any saved meds missing `vibrate`
+  // Ensure backward compatibility for any saved meds missing newer fields
   const medications = rawMeds.map((m) => ({
     ...m,
+    scheduleMode: m.scheduleMode ?? 'fixed',
     vibrate: m.vibrate ?? true,
   }));
 

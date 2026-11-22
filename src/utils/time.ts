@@ -1,4 +1,4 @@
-import type { FoodTiming } from '../types';
+import type { FoodTiming, Medication } from '../types';
 
 export const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
 
@@ -43,6 +43,34 @@ export function foodTimingLabel(timing: FoodTiming): string {
     case 'anytime':
       return 'Anytime';
   }
+}
+
+/** Expand fixed or interval-based medication into daily HH:MM alarm times. */
+export function getMedicationTimes(med: Medication): string[] {
+  if (med.scheduleMode === 'prn') return [];
+  if (med.scheduleMode === 'interval') {
+    const stepHours = Math.max(1, Math.min(12, med.intervalHours ?? 8));
+    const start = med.intervalStart || '08:00';
+    const [startH, startM] = start.split(':').map(Number);
+    const result: string[] = [];
+    for (let totalMins = startH * 60 + startM; totalMins < 24 * 60; totalMins += stepHours * 60) {
+      const h = String(Math.floor(totalMins / 60)).padStart(2, '0');
+      const m = String(totalMins % 60).padStart(2, '0');
+      result.push(`${h}:${m}`);
+    }
+    return result;
+  }
+  return med.times;
+}
+
+/** Days until expiryDate (YYYY-MM-DD). Negative = already expired. */
+export function daysUntilExpiry(expiryDate: string | undefined, now: Date): number | null {
+  if (!expiryDate) return null;
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const [y, m, d] = expiryDate.split('-').map(Number);
+  if (!y || !m || !d) return null;
+  const expStart = new Date(y, m - 1, d).getTime();
+  return Math.round((expStart - todayStart) / (24 * 60 * 60 * 1000));
 }
 
 /** Signed minutes from `now` until `hhmm` today (negative = overdue today). */
