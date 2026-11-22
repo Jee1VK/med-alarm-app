@@ -1275,6 +1275,17 @@ export function App() {
                 >
                   <Upload size={16} aria-hidden="true" /> Restore Backup
                 </button>
+                {isNativeAndroid() && (
+                  <a
+                    className="btn btn--primary btn--sm"
+                    style={{ textDecoration: 'none' }}
+                    href="https://github.com/Jee1VK/med-alarm-app/releases/latest/download/MedClock.apk"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <Download size={16} aria-hidden="true" /> Check App Update
+                  </a>
+                )}
                 <input
                   ref={restoreInputRef}
                   type="file"

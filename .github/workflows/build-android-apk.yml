@@ -79,22 +79,58 @@ jobs:
                   t = i / sample_rate
                   cycle = t % 1.0
                   val = 0.0
-                  # Loud triple-chime pulse every second
                   if cycle < 0.16 or (0.22 <= cycle < 0.38) or (0.44 <= cycle < 0.65):
                       freq = 880.0 if cycle < 0.44 else 1174.66
                       val = 0.72 * math.sin(2.0 * math.pi * freq * t) + 0.22 * math.sin(6.0 * math.pi * freq * t)
                   s = max(-32767, min(32767, int(val * 32767)))
                   frames += struct.pack("<h", s)
               wf.writeframes(frames)
-          print("Embedded custom icon and medclock_alarm.wav successfully.")
           EOF
 
-      - name: Build Android APK (Gradle)
+      - name: Configure Permanent Signing & Auto-Incrementing Version
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASS: ${{ secrets.ANDROID_KEY_PASS }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/app/medclock-release.jks
+          python3 - << 'EOF'
+          import os, re
+          path = "android/app/build.gradle"
+          with open(path, "r") as f:
+              text = f.read()
+          run_num = os.environ["RUN_NUMBER"]
+          text = re.sub(r"versionCode\s+\d+", f"versionCode {run_num}", text)
+          text = re.sub(r'versionName\s+"[^"]+"', f'versionName "1.0.{run_num}"', text)
+          signing_block = """
+              signingConfigs {
+                  release {
+                      storeFile file("medclock-release.jks")
+                      storePassword System.getenv("ANDROID_KEYSTORE_PASS")
+                      keyAlias System.getenv("ANDROID_KEY_ALIAS")
+                      keyPassword System.getenv("ANDROID_KEY_PASS")
+                  }
+              }
+              buildTypes {
+                  release {
+                      signingConfig signingConfigs.release"""
+          text = text.replace("    buildTypes {\n        release {", signing_block, 1)
+          with open(path, "w") as f:
+              f.write(text)
+          EOF
+
+      - name: Build Signed Release Android APK (Gradle)
+        env:
+          ANDROID_KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASS: ${{ secrets.ANDROID_KEY_PASS }}
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug
-          cp app/build/outputs/apk/debug/app-debug.apk ../MedClock.apk
+          ./gradlew assembleRelease
+          cp app/build/outputs/apk/release/app-release.apk ../MedClock.apk
 
       - name: Upload MedClock APK Artifact
         uses: actions/upload-artifact@v4
@@ -112,5 +148,5 @@ jobs:
           else
             gh release create latest MedClock.apk \
               --title "MedClock (Latest Android APK)" \
-              --notes "Always-updated Android APK for MedClock with closed-app OS alarms, custom MedClock app icon, and loud 8-second alarm ringtone."
+              --notes "Always-updated signed Android APK for MedClock. Updates install in-place without uninstalling."
           fi
