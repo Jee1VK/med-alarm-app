@@ -36,7 +36,7 @@ export function useAlarmScheduler({
   const [snoozed, setSnoozed] = useState<SnoozedItem[]>(() => loadSnoozed());
   const snoozedRef = useRef<SnoozedItem[]>(snoozed);
   const firedMinuteKeysRef = useRef<Set<string>>(new Set());
-  const lastDateKeyRef = useRef<string>(toDateKey(new Date()));
+  const lastDateKeyRef = useRef<string>('');
 
   const activeRing = ringQueue[0] ?? null;
 
