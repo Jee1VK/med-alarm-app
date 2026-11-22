@@ -1,7 +1,13 @@
-import { type FormEvent, useEffect, useRef, useState } from 'react';
-import { Check, Plus, Trash2, Volume2, X } from 'lucide-react';
+import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from 'react';
+import { Camera, Check, FileText, Plus, Trash2, Volume2, X } from 'lucide-react';
 import type { AlarmTone, FoodTiming, MedColorTag, Medication, ScheduleMode } from '../types';
 import { alarmAudio } from '../utils/alarmAudio';
+import {
+  compressImageFile,
+  deleteMedPhoto,
+  getMedPhoto,
+  saveMedPhoto,
+} from '../utils/imageStore';
 import { createId } from '../utils/storage';
 import { DAY_LABELS } from '../utils/time';
 
@@ -57,6 +63,52 @@ function MedicationForm({
   const [dosesPerIntake] = useState(editing?.dosesPerIntake ?? 1);
   const [refillThreshold, setRefillThreshold] = useState(editing?.refillThreshold ?? 5);
 
+  // Tablet & Prescription photo previews (compressed JPEG data URLs)
+  const [tabletPhoto, setTabletPhoto] = useState<string | null>(null);
+  const [rxPhoto, setRxPhoto] = useState<string | null>(null);
+  const [tabletDirty, setTabletDirty] = useState(false);
+  const [rxDirty, setRxDirty] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!editing) return;
+    let active = true;
+    if (editing.hasTabletPhoto) {
+      void getMedPhoto(editing.id, 'tablet').then((url) => {
+        if (active) setTabletPhoto(url);
+      });
+    }
+    if (editing.hasPrescriptionPhoto) {
+      void getMedPhoto(editing.id, 'prescription').then((url) => {
+        if (active) setRxPhoto(url);
+      });
+    }
+    return () => {
+      active = false;
+    };
+  }, [editing]);
+
+  const handlePhotoPick = async (kind: 'tablet' | 'prescription', e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoError(null);
+    try {
+      const compressed = await compressImageFile(file, kind === 'prescription' ? 1400 : 900, 0.8);
+      if (kind === 'tablet') {
+        setTabletPhoto(compressed);
+        setTabletDirty(true);
+      } else {
+        setRxPhoto(compressed);
+        setRxDirty(true);
+      }
+    } catch {
+      setPhotoError('Could not process that image. Please try a JPG or PNG photo.');
+    } finally {
+      e.target.value = '';
+    }
+  };
+
   const toggleDay = (day: number) => {
     setDaysError(false);
     setDays((prev) =>
@@ -64,10 +116,28 @@ function MedicationForm({
     );
   };
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (scheduleMode !== 'prn' && days.length === 0) {
       setDaysError(true);
+      return;
+    }
+
+    setSaving(true);
+    const medId = editing?.id ?? createId('med');
+
+    try {
+      if (tabletDirty) {
+        if (tabletPhoto) await saveMedPhoto(medId, 'tablet', tabletPhoto);
+        else await deleteMedPhoto(medId, 'tablet');
+      }
+      if (rxDirty) {
+        if (rxPhoto) await saveMedPhoto(medId, 'prescription', rxPhoto);
+        else await deleteMedPhoto(medId, 'prescription');
+      }
+    } catch {
+      setPhotoError('Could not save photo to device storage.');
+      setSaving(false);
       return;
     }
 
@@ -78,7 +148,7 @@ function MedicationForm({
       : Math.max(safeRemaining, 1);
 
     onSave({
-      id: editing?.id ?? createId('med'),
+      id: medId,
       name: name.trim(),
       dosage: dosage.trim(),
       scheduleMode,
@@ -90,6 +160,8 @@ function MedicationForm({
       colorTag,
       expiryDate: expiryDate || undefined,
       notes: notes.trim() || undefined,
+      hasTabletPhoto: tabletDirty ? Boolean(tabletPhoto) : Boolean(editing?.hasTabletPhoto),
+      hasPrescriptionPhoto: rxDirty ? Boolean(rxPhoto) : Boolean(editing?.hasPrescriptionPhoto),
       tone,
       vibrate,
       enabled: editing?.enabled ?? true,
@@ -99,6 +171,7 @@ function MedicationForm({
       dosesPerIntake: Math.max(1, dosesPerIntake),
       refillThreshold: Math.max(0, refillThreshold),
     });
+    setSaving(false);
     onClose();
   };
 
@@ -387,6 +460,72 @@ function MedicationForm({
           </label>
         )}
 
+        <div className="field">
+          <span className="field-label">Reference Photos (Saved Offline on Device)</span>
+          <div className="grid-2">
+            <div className="photo-slot">
+              {tabletPhoto ? (
+                <div className="photo-preview-wrap">
+                  <img src={tabletPhoto} alt="Tablet preview" className="photo-thumb" />
+                  <button
+                    type="button"
+                    className="btn btn--danger btn--sm"
+                    onClick={() => {
+                      setTabletPhoto(null);
+                      setTabletDirty(true);
+                    }}
+                  >
+                    Remove Tablet Photo
+                  </button>
+                </div>
+              ) : (
+                <label className="btn btn--secondary btn--sm" style={{ width: '100%' }}>
+                  <Camera size={16} aria-hidden="true" /> Add Tablet Photo
+                  <input
+                    type="file"
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                    onChange={(e) => void handlePhotoPick('tablet', e)}
+                  />
+                </label>
+              )}
+            </div>
+
+            <div className="photo-slot">
+              {rxPhoto ? (
+                <div className="photo-preview-wrap">
+                  <img src={rxPhoto} alt="Prescription preview" className="photo-thumb" />
+                  <button
+                    type="button"
+                    className="btn btn--danger btn--sm"
+                    onClick={() => {
+                      setRxPhoto(null);
+                      setRxDirty(true);
+                    }}
+                  >
+                    Remove Prescription
+                  </button>
+                </div>
+              ) : (
+                <label className="btn btn--secondary btn--sm" style={{ width: '100%' }}>
+                  <FileText size={16} aria-hidden="true" /> Add Prescription
+                  <input
+                    type="file"
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                    onChange={(e) => void handlePhotoPick('prescription', e)}
+                  />
+                </label>
+              )}
+            </div>
+          </div>
+          {photoError && (
+            <span style={{ fontSize: '0.82rem', color: 'var(--color-feedback-error)', fontWeight: 600 }}>
+              {photoError}
+            </span>
+          )}
+        </div>
+
         <details>
           <summary
             style={{
@@ -474,8 +613,8 @@ function MedicationForm({
         <button type="button" className="btn btn--secondary" onClick={onClose}>
           Cancel
         </button>
-        <button type="submit" className="btn btn--primary">
-          {editing ? 'Save Changes' : 'Save Medicine'}
+        <button type="submit" className="btn btn--primary" disabled={saving}>
+          {saving ? 'Saving…' : editing ? 'Save Changes' : 'Save Medicine'}
         </button>
       </div>
     </form>

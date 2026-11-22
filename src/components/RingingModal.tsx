@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { BellRing, CheckCircle2, Clock, SkipForward } from 'lucide-react';
 import type { RingingTarget } from '../types';
+import { getMedPhoto } from '../utils/imageStore';
 import { foodTimingLabel, formatTime12h } from '../utils/time';
 
 interface RingingModalProps {
@@ -19,6 +20,7 @@ export function RingingModal({
   onSkipMed,
 }: RingingModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const [tabletPhotoUrl, setTabletPhotoUrl] = useState<string | null>(null);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -31,6 +33,19 @@ export function RingingModal({
     }
   }, [target]);
 
+  useEffect(() => {
+    if (!target || !target.hasTabletPhoto) return;
+    let active = true;
+    void getMedPhoto(target.itemId, 'tablet').then((url) => {
+      if (active) setTabletPhotoUrl(url);
+    });
+    return () => {
+      active = false;
+    };
+  }, [target]);
+
+  const showPhoto = Boolean(target?.hasTabletPhoto && tabletPhotoUrl);
+
   return (
     <dialog
       ref={dialogRef}
@@ -42,13 +57,28 @@ export function RingingModal({
     >
       {target && (
         <div className="ring-dialog__inner">
-          <div className="ring-pulse" aria-hidden="true">
-            <BellRing size={34} />
-          </div>
+          {showPhoto && tabletPhotoUrl ? (
+            <img
+              src={tabletPhotoUrl}
+              alt={`${target.title} tablet`}
+              style={{
+                width: 96,
+                height: 96,
+                borderRadius: 12,
+                objectFit: 'cover',
+                border: '2px solid rgba(255,255,255,0.75)',
+                boxShadow: '0 8px 20px rgba(0,0,0,0.25)',
+              }}
+            />
+          ) : (
+            <div className="ring-pulse" aria-hidden="true">
+              <BellRing size={34} />
+            </div>
+          )}
 
           <div>
             <div className="badge badge--blue">
-              Medication Alarm
+              {target.isTest ? 'Test Medication Alarm' : 'Medication Alarm'}
               {queueCount > 1 ? ` (+${queueCount - 1} waiting)` : ''}
             </div>
             <h2
@@ -56,8 +86,9 @@ export function RingingModal({
               style={{
                 margin: '10px 0 4px',
                 fontFamily: 'var(--font-display)',
-                fontSize: '2rem',
-                lineHeight: 1.1,
+                fontSize: '1.85rem',
+                lineHeight: 1.12,
+                overflowWrap: 'anywhere',
               }}
             >
               {target.title}
@@ -88,36 +119,40 @@ export function RingingModal({
               onClick={() => onMarkTaken(target)}
             >
               <CheckCircle2 size={20} aria-hidden="true" />
-              Mark Taken
+              {target.isTest ? 'Stop Test Alarm' : 'Mark Taken'}
             </button>
 
-            <div className="ring-btn-snooze-row">
-              <button
-                type="button"
-                className="ring-btn-ghost"
-                onClick={() => onSnooze(5)}
-              >
-                <Clock size={16} aria-hidden="true" style={{ verticalAlign: 'middle', marginRight: 6 }} />
-                Snooze 5m
-              </button>
-              <button
-                type="button"
-                className="ring-btn-ghost"
-                onClick={() => onSnooze(10)}
-              >
-                <Clock size={16} aria-hidden="true" style={{ verticalAlign: 'middle', marginRight: 6 }} />
-                Snooze 10m
-              </button>
-            </div>
+            {!target.isTest && (
+              <>
+                <div className="ring-btn-snooze-row">
+                  <button
+                    type="button"
+                    className="ring-btn-ghost"
+                    onClick={() => onSnooze(5)}
+                  >
+                    <Clock size={16} aria-hidden="true" style={{ verticalAlign: 'middle', marginRight: 6 }} />
+                    Snooze 5m
+                  </button>
+                  <button
+                    type="button"
+                    className="ring-btn-ghost"
+                    onClick={() => onSnooze(10)}
+                  >
+                    <Clock size={16} aria-hidden="true" style={{ verticalAlign: 'middle', marginRight: 6 }} />
+                    Snooze 10m
+                  </button>
+                </div>
 
-            <button
-              type="button"
-              className="ring-btn-ghost"
-              onClick={() => onSkipMed(target)}
-            >
-              <SkipForward size={16} aria-hidden="true" style={{ verticalAlign: 'middle', marginRight: 6 }} />
-              Skip This Dose
-            </button>
+                <button
+                  type="button"
+                  className="ring-btn-ghost"
+                  onClick={() => onSkipMed(target)}
+                >
+                  <SkipForward size={16} aria-hidden="true" style={{ verticalAlign: 'middle', marginRight: 6 }} />
+                  Skip This Dose
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}

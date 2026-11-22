@@ -19,6 +19,8 @@ export interface Medication {
   colorTag?: MedColorTag;
   expiryDate?: string; // YYYY-MM-DD
   notes?: string;
+  hasTabletPhoto?: boolean;
+  hasPrescriptionPhoto?: boolean;
   tone: AlarmTone;
   vibrate: boolean;
   enabled: boolean;
@@ -63,6 +65,8 @@ export interface RingingTarget {
   remainingDoses?: number;
   refillThreshold?: number;
   trackStock?: boolean;
+  hasTabletPhoto?: boolean;
+  isTest?: boolean;
 }
 
 export interface AppSettings {

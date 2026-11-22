@@ -7,6 +7,7 @@ import type {
   SnoozedItem,
 } from '../types';
 import { alarmAudio } from '../utils/alarmAudio';
+import { loadSnoozed, saveSnoozed } from '../utils/storage';
 import { getMedicationTimes, toDateKey } from '../utils/time';
 
 interface SchedulerProps {
@@ -32,14 +33,16 @@ export function useAlarmScheduler({
 }: SchedulerProps) {
   const [now, setNow] = useState<Date>(() => new Date());
   const [ringQueue, setRingQueue] = useState<RingingTarget[]>([]);
-  const [snoozed, setSnoozed] = useState<SnoozedItem[]>([]);
-  const snoozedRef = useRef<SnoozedItem[]>([]);
+  const [snoozed, setSnoozed] = useState<SnoozedItem[]>(() => loadSnoozed());
+  const snoozedRef = useRef<SnoozedItem[]>(snoozed);
   const firedMinuteKeysRef = useRef<Set<string>>(new Set());
+  const lastDateKeyRef = useRef<string>(toDateKey(new Date()));
 
   const activeRing = ringQueue[0] ?? null;
 
   useEffect(() => {
     snoozedRef.current = snoozed;
+    saveSnoozed(snoozed);
   }, [snoozed]);
 
   useEffect(() => {
@@ -82,6 +85,12 @@ export function useAlarmScheduler({
       const dayOfWeek = current.getDay();
       const nowMs = current.getTime();
 
+      // Prune firedMinuteKeysRef on midnight rollover so long-running sessions never leak memory
+      if (lastDateKeyRef.current !== dateKey) {
+        lastDateKeyRef.current = dateKey;
+        firedMinuteKeysRef.current.clear();
+      }
+
       const dueTargets: RingingTarget[] = [];
 
       // 1. Check snoozed medication alarms synchronously (and prune any already taken/skipped)
@@ -111,6 +120,7 @@ export function useAlarmScheduler({
               remainingDoses: med.remainingDoses,
               refillThreshold: med.refillThreshold,
               trackStock: med.trackStock,
+              hasTabletPhoto: med.hasTabletPhoto,
             });
           } else {
             remaining.push(item);
@@ -152,6 +162,7 @@ export function useAlarmScheduler({
             remainingDoses: med.remainingDoses,
             refillThreshold: med.refillThreshold,
             trackStock: med.trackStock,
+            hasTabletPhoto: med.hasTabletPhoto,
           });
         }
       }

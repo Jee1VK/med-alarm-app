@@ -1,11 +1,20 @@
-import type { AppSettings, LogEntry, Medication } from '../types';
+import type { AppSettings, LogEntry, Medication, SnoozedItem } from '../types';
 
 const KEYS = {
   meds: 'medclock.medications.v1',
   logs: 'medclock.logs.v1',
   settings: 'medclock.settings.v1',
+  snoozed: 'medclock.snoozed.v1',
   initialized: 'medclock.initialized.v1',
 };
+
+function safeSetItem(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Ignore storage quota or private browsing errors so the UI never crashes
+  }
+}
 
 const DEFAULT_SETTINGS: AppSettings = {
   defaultSnoozeMinutes: 5,
@@ -100,15 +109,26 @@ export function loadInitialData(): {
 }
 
 export function saveMedications(meds: Medication[]): void {
-  localStorage.setItem(KEYS.meds, JSON.stringify(meds));
+  safeSetItem(KEYS.meds, JSON.stringify(meds));
 }
 
 export function saveLogs(logs: LogEntry[]): void {
-  localStorage.setItem(KEYS.logs, JSON.stringify(logs));
+  safeSetItem(KEYS.logs, JSON.stringify(logs));
 }
 
 export function saveSettings(settings: AppSettings): void {
-  localStorage.setItem(KEYS.settings, JSON.stringify(settings));
+  safeSetItem(KEYS.settings, JSON.stringify(settings));
+}
+
+export function loadSnoozed(): SnoozedItem[] {
+  const items = safeParse<SnoozedItem[]>(localStorage.getItem(KEYS.snoozed), []);
+  // Discard stale snoozes older than 20 minutes
+  const cutoff = Date.now() - 20 * 60 * 1000;
+  return items.filter((s) => typeof s.wakeAtMs === 'number' && s.wakeAtMs > cutoff);
+}
+
+export function saveSnoozed(items: SnoozedItem[]): void {
+  safeSetItem(KEYS.snoozed, JSON.stringify(items));
 }
 
 export function createId(prefix: string): string {

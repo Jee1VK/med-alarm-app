@@ -5,9 +5,11 @@ import {
   Bell,
   BellRing,
   CalendarClock,
+  Camera,
   Check,
   Download,
   FileSpreadsheet,
+  FileText,
   Flame,
   History,
   Moon,
@@ -23,12 +25,14 @@ import {
   Volume2,
 } from 'lucide-react';
 import { MedicationModal } from './components/MedicationModal';
+import { PhotoViewerModal } from './components/PhotoViewerModal';
 import { RingingModal } from './components/RingingModal';
 import { useAlarmScheduler } from './hooks/useAlarmScheduler';
 import type { AppSettings, LogEntry, Medication, RingingTarget } from './types';
 import { alarmAudio } from './utils/alarmAudio';
 import { exportBackupJson, exportHistoryCsv, parseBackupJson } from './utils/exportData';
 import { ENCOURAGING_MESSAGES, computeStreak, getEarnedBadges } from './utils/gamification';
+import { type PhotoKind, deleteAllPhotosForMed } from './utils/imageStore';
 import {
   SAMPLE_MEDICATIONS,
   createId,
@@ -87,6 +91,7 @@ export function App() {
   const [medModalOpen, setMedModalOpen] = useState(false);
   const [editingMed, setEditingMed] = useState<Medication | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [viewingPhoto, setViewingPhoto] = useState<{ medId: string; medName: string; kind: PhotoKind } | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
   const toastIdxRef = useRef(0);
@@ -186,7 +191,7 @@ export function App() {
       action,
       timestamp: new Date().toISOString(),
     };
-    setLogs((prev) => [entry, ...prev].slice(0, 300));
+    setLogs((prev) => [entry, ...prev].slice(0, 2000));
   };
 
   const markMedicationTaken = (med: Medication, scheduledTime: string, isExtra = false) => {
@@ -249,15 +254,19 @@ export function App() {
   };
 
   const handleRingMarkTaken = (target: RingingTarget) => {
-    const med = medications.find((m) => m.id === target.itemId);
-    if (med) {
-      markMedicationTaken(med, target.scheduledTime);
+    if (!target.isTest) {
+      const med = medications.find((m) => m.id === target.itemId);
+      if (med) {
+        markMedicationTaken(med, target.scheduledTime);
+      }
     }
     dismissCurrentRing();
   };
 
   const handleRingSkipMed = (target: RingingTarget) => {
-    logAction(target.itemId, target.title, target.subtitle, target.scheduledTime, 'skipped');
+    if (!target.isTest) {
+      logAction(target.itemId, target.title, target.subtitle, target.scheduledTime, 'skipped');
+    }
     dismissCurrentRing();
   };
 
@@ -487,6 +496,7 @@ export function App() {
                 tone: 'temple_chime',
                 vibrate: true,
                 foodTiming: 'after_food',
+                isTest: true,
               });
             }}
           >
@@ -747,6 +757,30 @@ export function App() {
                         {status === 'skipped' && <span className="badge badge--red">Skipped</span>}
                       </div>
                       <div className="item-sub">{med.dosage}</div>
+                      {(med.hasTabletPhoto || med.hasPrescriptionPhoto) && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+                          {med.hasTabletPhoto && (
+                            <button
+                              type="button"
+                              className="badge badge--blue"
+                              style={{ cursor: 'pointer', minHeight: 32, padding: '0 10px' }}
+                              onClick={() => setViewingPhoto({ medId: med.id, medName: med.name, kind: 'tablet' })}
+                            >
+                              <Camera size={13} aria-hidden="true" /> Tablet Photo
+                            </button>
+                          )}
+                          {med.hasPrescriptionPhoto && (
+                            <button
+                              type="button"
+                              className="badge"
+                              style={{ cursor: 'pointer', minHeight: 32, padding: '0 10px' }}
+                              onClick={() => setViewingPhoto({ medId: med.id, medName: med.name, kind: 'prescription' })}
+                            >
+                              <FileText size={13} aria-hidden="true" /> Prescription
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     {status === 'pending' ? (
@@ -902,6 +936,28 @@ export function App() {
                           </div>
                         </div>
                       )}
+                      {(med.hasTabletPhoto || med.hasPrescriptionPhoto) && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                          {med.hasTabletPhoto && (
+                            <button
+                              type="button"
+                              className="btn btn--secondary btn--sm"
+                              onClick={() => setViewingPhoto({ medId: med.id, medName: med.name, kind: 'tablet' })}
+                            >
+                              <Camera size={15} aria-hidden="true" /> Tablet Photo
+                            </button>
+                          )}
+                          {med.hasPrescriptionPhoto && (
+                            <button
+                              type="button"
+                              className="btn btn--secondary btn--sm"
+                              onClick={() => setViewingPhoto({ medId: med.id, medName: med.name, kind: 'prescription' })}
+                            >
+                              <FileText size={15} aria-hidden="true" /> Prescription
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
@@ -953,6 +1009,8 @@ export function App() {
                               vibrate: med.vibrate,
                               foodTiming: med.foodTiming,
                               notes: med.notes,
+                              hasTabletPhoto: med.hasTabletPhoto,
+                              isTest: true,
                             });
                           }}
                         >
@@ -977,6 +1035,7 @@ export function App() {
                             className="btn btn--danger btn--sm"
                             onClick={() => {
                               setMedications((prev) => prev.filter((m) => m.id !== med.id));
+                              void deleteAllPhotosForMed(med.id);
                               setConfirmDeleteId(null);
                             }}
                           >
@@ -1263,6 +1322,8 @@ export function App() {
           });
         }}
       />
+
+      <PhotoViewerModal viewing={viewingPhoto} onClose={() => setViewingPhoto(null)} />
     </div>
   );
 }
