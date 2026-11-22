@@ -37,6 +37,7 @@ import {
   initNativeAlarms,
   isNativeAndroid,
   scheduleNativeSnooze,
+  scheduleNativeTestAlarm,
   syncNativeMedicationAlarms,
 } from './utils/nativeAlarms';
 import {
@@ -101,11 +102,16 @@ export function App() {
   const [viewingPhoto, setViewingPhoto] = useState<{ medId: string; medName: string; kind: PhotoKind } | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
+  const [nativeScheduledCount, setNativeScheduledCount] = useState<number | null>(null);
   const toastIdxRef = useRef(0);
 
   useEffect(() => {
     saveMedications(medications);
-    void syncNativeMedicationAlarms(medications);
+    if (isNativeAndroid()) {
+      void syncNativeMedicationAlarms(medications).then((count) => {
+        setNativeScheduledCount(count);
+      });
+    }
   }, [medications]);
   useEffect(() => {
     void initNativeAlarms();
@@ -631,7 +637,35 @@ export function App() {
             </section>
           )}
 
-          {!audioUnlocked && (
+          {isNativeAndroid() && (
+            <div className="banner banner--info" role="status">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <BellRing size={18} aria-hidden="true" />
+                <span>
+                  <strong>Android Alarms Ready:</strong>{' '}
+                  {nativeScheduledCount !== null
+                    ? `${nativeScheduledCount} upcoming alarm${nativeScheduledCount === 1 ? '' : 's'} synced to OS.`
+                    : 'Syncing with Android…'}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="btn btn--primary btn--sm"
+                onClick={async () => {
+                  const ok = await scheduleNativeTestAlarm();
+                  setToastMsg(
+                    ok
+                      ? 'Test alarm set for 5 seconds! Close the app or lock your screen now.'
+                      : 'Please allow Notifications permission for MedClock in Android Settings.'
+                  );
+                }}
+              >
+                Test 5s Alarm
+              </button>
+            </div>
+          )}
+
+          {!isNativeAndroid() && !audioUnlocked && (
             <div className="banner banner--warning" role="status">
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <Volume2 size={18} aria-hidden="true" />
@@ -643,7 +677,7 @@ export function App() {
             </div>
           )}
 
-          {notifPermission === 'default' && (
+          {!isNativeAndroid() && notifPermission === 'default' && (
             <div className="banner banner--info" role="status">
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <Bell size={18} aria-hidden="true" />

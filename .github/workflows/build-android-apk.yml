@@ -47,15 +47,70 @@ jobs:
             sed -i 's|<application|<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />\n    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />\n    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />\n    <uses-permission android:name="android.permission.VIBRATE" />\n    <uses-permission android:name="android.permission.WAKE_LOCK" />\n\n    <application|' "$MANIFEST"
           fi
 
+      - name: Embed Custom MedClock App Icon & Loud Alarm Ringtone WAV
+        run: |
+          python3 - << 'EOF'
+          import math, os, shutil, struct, wave
+
+          # 1. Embed custom MedClock launcher icon across all Android mipmap buckets
+          res_dir = "android/app/src/main/res"
+          anydpi = os.path.join(res_dir, "mipmap-anydpi-v26")
+          if os.path.isdir(anydpi):
+              shutil.rmtree(anydpi)
+          for bucket in ["mipmap-mdpi", "mipmap-hdpi", "mipmap-xhdpi", "mipmap-xxhdpi", "mipmap-xxxhdpi"]:
+              d = os.path.join(res_dir, bucket)
+              os.makedirs(d, exist_ok=True)
+              for name in ["ic_launcher.png", "ic_launcher_round.png", "ic_launcher_foreground.png"]:
+                  shutil.copyfile("public/icon-512.png", os.path.join(d, name))
+
+          # 2. Synthesize a loud, unmistakable 8-second alarm ringtone WAV in res/raw/medclock_alarm.wav
+          raw_dir = os.path.join(res_dir, "raw")
+          os.makedirs(raw_dir, exist_ok=True)
+          wav_path = os.path.join(raw_dir, "medclock_alarm.wav")
+          sample_rate = 22050
+          duration = 8.0
+          n_samples = int(sample_rate * duration)
+          with wave.open(wav_path, "w") as wf:
+              wf.setnchannels(1)
+              wf.setsampwidth(2)
+              wf.setframerate(sample_rate)
+              frames = bytearray()
+              for i in range(n_samples):
+                  t = i / sample_rate
+                  cycle = t % 1.0
+                  val = 0.0
+                  # Loud triple-chime pulse every second
+                  if cycle < 0.16 or (0.22 <= cycle < 0.38) or (0.44 <= cycle < 0.65):
+                      freq = 880.0 if cycle < 0.44 else 1174.66
+                      val = 0.72 * math.sin(2.0 * math.pi * freq * t) + 0.22 * math.sin(6.0 * math.pi * freq * t)
+                  s = max(-32767, min(32767, int(val * 32767)))
+                  frames += struct.pack("<h", s)
+              wf.writeframes(frames)
+          print("Embedded custom icon and medclock_alarm.wav successfully.")
+          EOF
+
       - name: Build Android APK (Gradle)
         run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug
+          cp app/build/outputs/apk/debug/app-debug.apk ../MedClock.apk
 
       - name: Upload MedClock APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: MedClock-Android-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: MedClock.apk
           retention-days: 30
+
+      - name: Auto-Publish Latest GitHub Release (MedClock.apk)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view latest >/dev/null 2>&1; then
+            gh release upload latest MedClock.apk --clobber
+          else
+            gh release create latest MedClock.apk \
+              --title "MedClock (Latest Android APK)" \
+              --notes "Always-updated Android APK for MedClock with closed-app OS alarms, custom MedClock app icon, and loud 8-second alarm ringtone."
+          fi
