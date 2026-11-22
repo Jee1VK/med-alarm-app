@@ -488,24 +488,21 @@ export function App() {
             <div className="brand-version-row">
               <span className="tabular-nums">v{APP_VERSION}</span>
               <span aria-hidden="true">•</span>
-              {isNativeAndroid() ? (
-                <a
-                  className="brand-update-link"
-                  href={LATEST_APK_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Update
-                </a>
-              ) : (
-                <button
-                  type="button"
-                  className="brand-update-link"
-                  onClick={() => window.location.reload()}
-                >
-                  Update
-                </button>
-              )}
+              <button
+                type="button"
+                className="brand-update-link"
+                onClick={async () => {
+                  try {
+                    const reg = await navigator.serviceWorker?.getRegistration();
+                    await reg?.update();
+                  } catch {
+                    // Ignore SW errors
+                  }
+                  window.location.reload();
+                }}
+              >
+                Update
+              </button>
             </div>
           </div>
         </div>
@@ -1303,11 +1300,11 @@ export function App() {
                   <a
                     className="btn btn--primary btn--sm"
                     style={{ textDecoration: 'none' }}
-                    href="https://github.com/Jee1VK/med-alarm-app/releases/latest/download/MedClock.apk"
+                    href={LATEST_APK_URL}
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    <Download size={16} aria-hidden="true" /> Check App Update
+                    <Download size={16} aria-hidden="true" /> Download APK
                   </a>
                 )}
                 <input
