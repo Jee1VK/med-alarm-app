@@ -2,10 +2,98 @@ import type { AlarmTone } from '../types';
 
 /**
  * Dual-layer Alarm Audio Engine (Generated PCM WAV <audio loop> + Web Audio API).
+ * - 10 original, 100% royalty-free mathematically synthesized alarm tones.
  * - Never hangs on suspended AudioContext.resume() outside user gestures.
- * - Unlocks both <audio> and AudioContext on first user interaction.
  * - Works 100% offline with zero external sound files.
  */
+
+interface NoteSpec {
+  freq: number;
+  endFreq?: number;
+  start: number;
+  dur: number;
+  amp: number;
+  bright?: boolean;
+}
+
+function getToneNotes(tone: AlarmTone): NoteSpec[] {
+  switch (tone) {
+    case 'classic_bell':
+      return [
+        { freq: 880, start: 0.0, dur: 0.14, amp: 0.65, bright: true },
+        { freq: 880, start: 0.18, dur: 0.14, amp: 0.65, bright: true },
+        { freq: 880, start: 0.36, dur: 0.14, amp: 0.65, bright: true },
+        { freq: 880, start: 0.72, dur: 0.14, amp: 0.65, bright: true },
+        { freq: 880, start: 0.9, dur: 0.14, amp: 0.65, bright: true },
+      ];
+    case 'urgent_pulse':
+      return [
+        { freq: 987.77, start: 0.0, dur: 0.18, amp: 0.7, bright: true },
+        { freq: 1318.51, start: 0.22, dur: 0.18, amp: 0.75, bright: true },
+        { freq: 987.77, start: 0.44, dur: 0.18, amp: 0.7, bright: true },
+        { freq: 1318.51, start: 0.66, dur: 0.28, amp: 0.75, bright: true },
+      ];
+    case 'gentle_dawn':
+      return [
+        { freq: 392.0, start: 0.0, dur: 0.45, amp: 0.55 },
+        { freq: 493.88, start: 0.25, dur: 0.45, amp: 0.55 },
+        { freq: 587.33, start: 0.5, dur: 0.65, amp: 0.6 },
+      ];
+    case 'morning_birds':
+      return [
+        { freq: 1450, endFreq: 2150, start: 0.0, dur: 0.14, amp: 0.45 },
+        { freq: 1950, endFreq: 1500, start: 0.16, dur: 0.13, amp: 0.4 },
+        { freq: 1600, endFreq: 2450, start: 0.42, dur: 0.16, amp: 0.48 },
+        { freq: 2300, endFreq: 1800, start: 0.62, dur: 0.14, amp: 0.42 },
+        { freq: 1750, endFreq: 2600, start: 0.9, dur: 0.18, amp: 0.48 },
+      ];
+    case 'marimba_breeze':
+      return [
+        { freq: 523.25, start: 0.0, dur: 0.22, amp: 0.62 },
+        { freq: 659.25, start: 0.16, dur: 0.22, amp: 0.62 },
+        { freq: 783.99, start: 0.32, dur: 0.22, amp: 0.62 },
+        { freq: 880.0, start: 0.48, dur: 0.26, amp: 0.65 },
+        { freq: 1046.5, start: 0.68, dur: 0.36, amp: 0.68 },
+      ];
+    case 'crystal_harp':
+      return [
+        { freq: 523.25, start: 0.0, dur: 0.55, amp: 0.48 },
+        { freq: 659.25, start: 0.1, dur: 0.55, amp: 0.48 },
+        { freq: 783.99, start: 0.2, dur: 0.55, amp: 0.48 },
+        { freq: 987.77, start: 0.3, dur: 0.6, amp: 0.48 },
+        { freq: 1174.66, start: 0.4, dur: 0.75, amp: 0.52 },
+      ];
+    case 'digital_radar':
+      return [
+        { freq: 1046.5, start: 0.0, dur: 0.1, amp: 0.65, bright: true },
+        { freq: 1046.5, start: 0.14, dur: 0.1, amp: 0.65, bright: true },
+        { freq: 1318.51, start: 0.28, dur: 0.12, amp: 0.7, bright: true },
+        { freq: 1046.5, start: 0.75, dur: 0.1, amp: 0.65, bright: true },
+        { freq: 1046.5, start: 0.89, dur: 0.1, amp: 0.65, bright: true },
+        { freq: 1318.51, start: 1.03, dur: 0.14, amp: 0.7, bright: true },
+      ];
+    case 'zen_gong':
+      return [
+        { freq: 261.63, start: 0.0, dur: 1.45, amp: 0.55 },
+        { freq: 392.0, start: 0.02, dur: 1.35, amp: 0.35 },
+        { freq: 523.25, start: 0.04, dur: 1.2, amp: 0.25 },
+      ];
+    case 'loud_siren':
+      return [
+        { freq: 740, endFreq: 1240, start: 0.0, dur: 0.36, amp: 0.78, bright: true },
+        { freq: 1240, endFreq: 740, start: 0.38, dur: 0.36, amp: 0.78, bright: true },
+        { freq: 740, endFreq: 1240, start: 0.78, dur: 0.36, amp: 0.78, bright: true },
+        { freq: 1240, endFreq: 740, start: 1.16, dur: 0.36, amp: 0.78, bright: true },
+      ];
+    case 'temple_chime':
+    default:
+      return [
+        { freq: 523.25, start: 0.0, dur: 0.55, amp: 0.65 },
+        { freq: 783.99, start: 0.16, dur: 0.55, amp: 0.6 },
+        { freq: 1046.5, start: 0.34, dur: 0.75, amp: 0.65 },
+      ];
+  }
+}
 
 function createWavBlobUrl(tone: AlarmTone): string {
   const sampleRate = 22050;
@@ -22,9 +110,9 @@ function createWavBlobUrl(tone: AlarmTone): string {
   view.setUint32(4, 36 + numSamples * 2, true);
   writeStr(8, 'WAVE');
   writeStr(12, 'fmt ');
-  view.setUint32(16, 16, true); // PCM chunk size
-  view.setUint16(20, 1, true); // PCM format
-  view.setUint16(22, 1, true); // Mono
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
   view.setUint32(24, sampleRate, true);
   view.setUint32(28, sampleRate * 2, true);
   view.setUint16(32, 2, true);
@@ -32,34 +120,7 @@ function createWavBlobUrl(tone: AlarmTone): string {
   writeStr(36, 'data');
   view.setUint32(40, numSamples * 2, true);
 
-  const notes: { freq: number; start: number; dur: number; amp: number }[] =
-    tone === 'classic_bell'
-      ? [
-          { freq: 880, start: 0.0, dur: 0.14, amp: 0.65 },
-          { freq: 880, start: 0.18, dur: 0.14, amp: 0.65 },
-          { freq: 880, start: 0.36, dur: 0.14, amp: 0.65 },
-          { freq: 880, start: 0.72, dur: 0.14, amp: 0.65 },
-          { freq: 880, start: 0.9, dur: 0.14, amp: 0.65 },
-        ]
-      : tone === 'urgent_pulse'
-        ? [
-            { freq: 987.77, start: 0.0, dur: 0.18, amp: 0.7 },
-            { freq: 1318.51, start: 0.22, dur: 0.18, amp: 0.75 },
-            { freq: 987.77, start: 0.44, dur: 0.18, amp: 0.7 },
-            { freq: 1318.51, start: 0.66, dur: 0.28, amp: 0.75 },
-          ]
-        : tone === 'gentle_dawn'
-          ? [
-              { freq: 392.0, start: 0.0, dur: 0.45, amp: 0.55 },
-              { freq: 493.88, start: 0.25, dur: 0.45, amp: 0.55 },
-              { freq: 587.33, start: 0.5, dur: 0.65, amp: 0.6 },
-            ]
-          : [
-              // temple_chime
-              { freq: 523.25, start: 0.0, dur: 0.55, amp: 0.65 },
-              { freq: 783.99, start: 0.16, dur: 0.55, amp: 0.6 },
-              { freq: 1046.5, start: 0.34, dur: 0.75, amp: 0.65 },
-            ];
+  const notes = getToneNotes(tone);
 
   for (let i = 0; i < numSamples; i++) {
     const t = i / sampleRate;
@@ -67,12 +128,15 @@ function createWavBlobUrl(tone: AlarmTone): string {
     for (const n of notes) {
       if (t >= n.start && t <= n.start + n.dur) {
         const localT = t - n.start;
+        const progress = localT / n.dur;
         const attack = Math.min(1, localT / 0.015);
-        const decay = Math.exp(-3.2 * (localT / n.dur));
-        const wave =
-          tone === 'classic_bell' || tone === 'urgent_pulse'
-            ? Math.sin(2 * Math.PI * n.freq * localT) + 0.3 * Math.sin(6 * Math.PI * n.freq * localT)
-            : Math.sin(2 * Math.PI * n.freq * localT);
+        const decay = tone === 'loud_siren' ? Math.min(1, (1 - progress) * 8) : Math.exp(-3.0 * progress);
+        const endF = n.endFreq ?? n.freq;
+        // Continuous phase integral for linear frequency sweep
+        const phase = 2 * Math.PI * (n.freq * localT + 0.5 * ((endF - n.freq) / n.dur) * localT * localT);
+        const wave = n.bright
+          ? Math.sin(phase) + 0.28 * Math.sin(3 * phase)
+          : Math.sin(phase);
         sample += wave * n.amp * attack * decay;
       }
     }
@@ -120,11 +184,9 @@ class AlarmAudioEngine {
     }
   }
 
-  /** Call from any user gesture (click/tap) to unlock both Web Audio & <audio>. */
   async unlock(): Promise<boolean> {
     let unlocked = false;
 
-    // 1. Unlock Web Audio Context
     const ctx = this.getContext();
     if (ctx) {
       if (ctx.state === 'suspended') {
@@ -144,7 +206,6 @@ class AlarmAudioEngine {
       }
     }
 
-    // 2. Unlock HTMLAudioElement with a silent play/pause
     try {
       const el = this.getAudioElement();
       if (!el.src) {
@@ -173,32 +234,25 @@ class AlarmAudioEngine {
 
     const now = ctx.currentTime;
     const vol = Math.max(0.1, Math.min(1, volume));
-    const freqs =
-      tone === 'classic_bell'
-        ? [880, 880, 880]
-        : tone === 'urgent_pulse'
-          ? [987.77, 1318.51, 987.77]
-          : tone === 'gentle_dawn'
-            ? [392, 493.88, 587.33]
-            : [523.25, 783.99, 1046.5];
-
-    freqs.forEach((freq, idx) => {
-      const start = now + idx * 0.2;
+    for (const n of getToneNotes(tone)) {
+      const start = now + n.start;
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
-      osc.type = tone === 'classic_bell' ? 'square' : 'triangle';
-      osc.frequency.setValueAtTime(freq, start);
+      osc.type = n.bright ? 'sawtooth' : 'sine';
+      osc.frequency.setValueAtTime(n.freq, start);
+      if (n.endFreq) {
+        osc.frequency.linearRampToValueAtTime(n.endFreq, start + n.dur);
+      }
       gain.gain.setValueAtTime(0.001, start);
-      gain.gain.exponentialRampToValueAtTime(0.45 * vol, start + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.35);
+      gain.gain.exponentialRampToValueAtTime(n.amp * 0.55 * vol, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + n.dur);
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.start(start);
-      osc.stop(start + 0.38);
-    });
+      osc.stop(start + n.dur + 0.02);
+    }
   }
 
-  /** Preview a tone once (non-looping). */
   preview(tone: AlarmTone, volume = 0.85): void {
     this.stop();
     try {
@@ -216,7 +270,6 @@ class AlarmAudioEngine {
     }
   }
 
-  /** Play a short, pleasant 2-note chime when a dose is marked Taken. */
   playSuccessChime(volume = 0.7): void {
     const ctx = this.getContext();
     if (!ctx) return;
@@ -248,16 +301,11 @@ class AlarmAudioEngine {
     }
   }
 
-  /**
-   * Start persistent looping alarm + optional vibration until stop() is called.
-   * Non-blocking: starts immediately without awaiting suspended AudioContext.
-   */
   startLoop(tone: AlarmTone, volume = 0.9, vibrate = true): void {
     this.stop();
     this.isPlaying = true;
     const vol = Math.max(0.1, Math.min(1, volume));
 
-    // Primary: real looping WAV <audio> element (most reliable on mobile & desktop)
     try {
       const el = this.getAudioElement();
       el.loop = true;
@@ -266,7 +314,6 @@ class AlarmAudioEngine {
       el.src = this.getWavUrl(tone);
       el.currentTime = 0;
       void el.play().catch(() => {
-        // Fallback to Web Audio loop if <audio>.play() was blocked
         if (this.isPlaying) {
           this.playWebAudioBurst(tone, vol);
           this.loopTimer = window.setInterval(() => {

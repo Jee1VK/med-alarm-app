@@ -1,6 +1,13 @@
 import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from 'react';
 import { Camera, Check, FileText, Plus, Trash2, Volume2, X } from 'lucide-react';
-import type { AlarmTone, FoodTiming, MedColorTag, Medication, ScheduleMode } from '../types';
+import {
+  ALARM_TONE_OPTIONS,
+  type AlarmTone,
+  type FoodTiming,
+  type MedColorTag,
+  type Medication,
+  type ScheduleMode,
+} from '../types';
 import { alarmAudio } from '../utils/alarmAudio';
 import {
   compressImageFile,
@@ -430,10 +437,11 @@ function MedicationForm({
                   value={tone}
                   onChange={(e) => setTone(e.target.value as AlarmTone)}
                 >
-                  <option value="temple_chime">Temple Chime</option>
-                  <option value="classic_bell">Classic Bell</option>
-                  <option value="urgent_pulse">Urgent Pulse</option>
-                  <option value="gentle_dawn">Gentle Dawn</option>
+                  {ALARM_TONE_OPTIONS.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.label}
+                    </option>
+                  ))}
                 </select>
                 <button
                   type="button"

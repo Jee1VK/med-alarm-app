@@ -1,6 +1,29 @@
 export type FoodTiming = 'before_food' | 'after_food' | 'with_food' | 'anytime';
 
-export type AlarmTone = 'temple_chime' | 'classic_bell' | 'urgent_pulse' | 'gentle_dawn';
+export type AlarmTone =
+  | 'temple_chime'
+  | 'classic_bell'
+  | 'urgent_pulse'
+  | 'gentle_dawn'
+  | 'morning_birds'
+  | 'marimba_breeze'
+  | 'crystal_harp'
+  | 'digital_radar'
+  | 'zen_gong'
+  | 'loud_siren';
+
+export const ALARM_TONE_OPTIONS: { id: AlarmTone; label: string }[] = [
+  { id: 'temple_chime', label: 'Temple Chime' },
+  { id: 'classic_bell', label: 'Classic Bell' },
+  { id: 'urgent_pulse', label: 'Urgent Pulse' },
+  { id: 'gentle_dawn', label: 'Gentle Dawn' },
+  { id: 'morning_birds', label: 'Morning Birds' },
+  { id: 'marimba_breeze', label: 'Marimba Breeze' },
+  { id: 'crystal_harp', label: 'Crystal Harp' },
+  { id: 'digital_radar', label: 'Digital Radar' },
+  { id: 'zen_gong', label: 'Zen Singing Bowl' },
+  { id: 'loud_siren', label: 'Loud Wake Siren' },
+];
 
 export type ScheduleMode = 'fixed' | 'interval' | 'prn';
 
