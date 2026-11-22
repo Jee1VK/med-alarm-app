@@ -1,32 +1,33 @@
-# React + TypeScript + Vite
+# MedClock — Medication Reminder & Linked Alarm PWA
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+**Live App:** [https://jee1vk.github.io/med-alarm-app/](https://jee1vk.github.io/med-alarm-app/)
 
-Currently, two official plugins are available:
+MedClock is an installable, offline-capable Progressive Web App (PWA) for scheduling daily medication alarms, tracking pill stock & expiry dates, and celebrating daily adherence streaks.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+---
 
-## React Compiler
+## Key Features
+- **Linked Medication Alarms:** Configure fixed daily times (with 1-tap presets: `1× Morning`, `2× Day & Night`, `3× Meals`, `Bedtime`), **Every X Hours** intervals (`4h`, `6h`, `8h`, `12h`), or **As Needed (PRN)** doses.
+- **Persistent Web Audio Synthesizer:** Zero-dependency Web Audio API engine (`Temple Chime`, `Classic Bell`, `Urgent Pulse`, `Gentle Dawn`) + device vibration + 2-note victory chime on dose completion.
+- **Reliable Catch-Up & Snooze:** 2-minute catch-up window + `visibilitychange` / `focus` checks prevent missed alarms in throttled tabs, and snoozed alarms automatically cancel if the dose is logged early.
+- **Pill Stock & Expiry Alerts:** Automatic low-stock refill warnings (`+30` quick refill) and 14-day medicine expiration alerts.
+- **Streaks, Completion Ring & Badges:** SVG daily completion ring, active day-streak counter, milestone badges (*First Step*, *3-Day Starter*, *7-Day Rhythm*, *30-Dose Champion*), and 100% daily confetti burst.
+- **Daylight & Bedside Night Mode:** High-contrast Calm Clinical Sky (`#0369A1`) & Health Emerald (`#047857`) daylight theme paired with a low-glare `#0B1120` Bedside Night Mode.
+- **Doctor-Ready CSV & JSON Backup:** Export dose history to CSV or download/restore full JSON backups offline.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+---
 
-## Expanding the Oxlint configuration
+## Local Development
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```powershell
+pushd "\\KUBERAN-NAS\Kuberan\Jeevan\Gemini Projects\med-alarm-app"
+npm install
+npm run dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+### Build & Lint Verification
+
+```powershell
+npm run lint
+npm run build
+```

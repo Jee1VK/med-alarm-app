@@ -65,6 +65,15 @@ export function useAlarmScheduler({
   }, [activeRing, settings.defaultVolume]);
 
   useEffect(() => {
+    const isDoseLoggedForDate = (itemId: string, dateKey: string, scheduledTime: string) =>
+      logs.some(
+        (l) =>
+          l.itemId === itemId &&
+          l.dateKey === dateKey &&
+          l.scheduledTime === scheduledTime &&
+          (l.action === 'taken' || l.action === 'skipped')
+      );
+
     const tick = () => {
       const current = new Date();
       setNow(current);
@@ -75,31 +84,34 @@ export function useAlarmScheduler({
 
       const dueTargets: RingingTarget[] = [];
 
-      // 1. Check snoozed medication alarms synchronously
+      // 1. Check snoozed medication alarms synchronously (and prune any already taken/skipped)
       if (snoozedRef.current.length > 0) {
         const remaining: SnoozedItem[] = [];
         let changed = false;
 
         for (const item of snoozedRef.current) {
+          const med = medications.find((m) => m.id === item.itemId);
+          if (!med || !med.enabled || isDoseLoggedForDate(item.itemId, dateKey, item.scheduledTime)) {
+            changed = true;
+            continue;
+          }
+
           if (item.wakeAtMs <= nowMs) {
             changed = true;
-            const med = medications.find((m) => m.id === item.itemId);
-            if (med && med.enabled) {
-              dueTargets.push({
-                key: item.key,
-                itemId: med.id,
-                title: med.name,
-                subtitle: med.dosage,
-                scheduledTime: item.scheduledTime,
-                tone: med.tone,
-                vibrate: med.vibrate,
-                foodTiming: med.foodTiming,
-                notes: med.notes,
-                remainingDoses: med.remainingDoses,
-                refillThreshold: med.refillThreshold,
-                trackStock: med.trackStock,
-              });
-            }
+            dueTargets.push({
+              key: item.key,
+              itemId: med.id,
+              title: med.name,
+              subtitle: med.dosage,
+              scheduledTime: item.scheduledTime,
+              tone: med.tone,
+              vibrate: med.vibrate,
+              foodTiming: med.foodTiming,
+              notes: med.notes,
+              remainingDoses: med.remainingDoses,
+              refillThreshold: med.refillThreshold,
+              trackStock: med.trackStock,
+            });
           } else {
             remaining.push(item);
           }
@@ -113,7 +125,7 @@ export function useAlarmScheduler({
 
       // 2. Check scheduled medication alarms (with 2-minute catch-up window)
       for (const med of medications) {
-        if (!med.enabled) continue;
+        if (!med.enabled || med.scheduleMode === 'prn') continue;
         if (!med.days.includes(dayOfWeek)) continue;
 
         for (const time of getMedicationTimes(med)) {
@@ -124,14 +136,7 @@ export function useAlarmScheduler({
           const minuteKey = `med:${med.id}:${dateKey}:${time}`;
           if (firedMinuteKeysRef.current.has(minuteKey)) continue;
 
-          const alreadyLogged = logs.some(
-            (l) =>
-              l.itemId === med.id &&
-              l.dateKey === dateKey &&
-              l.scheduledTime === time &&
-              (l.action === 'taken' || l.action === 'skipped')
-          );
-          if (alreadyLogged) continue;
+          if (isDoseLoggedForDate(med.id, dateKey, time)) continue;
 
           firedMinuteKeysRef.current.add(minuteKey);
           dueTargets.push({

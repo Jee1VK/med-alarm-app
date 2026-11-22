@@ -89,6 +89,7 @@ export function App() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
+  const toastIdxRef = useRef(0);
 
   useEffect(() => saveMedications(medications), [medications]);
   useEffect(() => saveLogs(logs), [logs]);
@@ -212,9 +213,9 @@ export function App() {
 
     const pendingCount = todaySchedule.filter((r) => r.status === 'pending').length;
     const completedAllToday = !isExtra && pendingCount === 1;
-    const msg = completedAllToday
-      ? 'All doses done for today — nice job!'
-      : ENCOURAGING_MESSAGES[Math.floor(Math.random() * ENCOURAGING_MESSAGES.length)];
+    const nextMsg = ENCOURAGING_MESSAGES[toastIdxRef.current % ENCOURAGING_MESSAGES.length];
+    toastIdxRef.current += 1;
+    const msg = completedAllToday ? 'All doses done for today — nice job!' : nextMsg;
     setToastMsg(msg);
     window.setTimeout(() => setToastMsg((curr) => (curr === msg ? null : curr)), 3600);
 
@@ -291,7 +292,7 @@ export function App() {
   };
 
   // Today's chronological scheduled medication alarms
-  const todaySchedule = useMemo(() => {
+  const todaySchedule = (() => {
     const rows: {
       key: string;
       time: string;
@@ -319,14 +320,14 @@ export function App() {
     }
 
     return rows.sort((a, b) => a.time.localeCompare(b.time));
-  }, [medications, logs, todayDow, todayKey]);
+  })();
 
   const prnMeds = useMemo(
     () => medications.filter((m) => m.enabled && m.scheduleMode === 'prn'),
     [medications]
   );
 
-  const nextUpcoming = useMemo(() => {
+  const nextUpcoming = (() => {
     const pending = todaySchedule
       .filter((row) => row.status === 'pending')
       .map((row) => ({
@@ -344,7 +345,7 @@ export function App() {
       return { kind: 'overdue' as const, item: overdue[0], overdueCount: overdue.length };
     }
     return null;
-  }, [todaySchedule, now]);
+  })();
 
   const lowStockMeds = useMemo(
     () => medications.filter((m) => m.trackStock && m.remainingDoses <= m.refillThreshold),
