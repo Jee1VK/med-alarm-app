@@ -63,6 +63,9 @@ import {
 
 type Tab = 'today' | 'medications' | 'history';
 
+const APP_VERSION: string = import.meta.env.VITE_APP_VERSION || '1.0.0';
+const LATEST_APK_URL = 'https://github.com/Jee1VK/med-alarm-app/releases/latest/download/MedClock.apk';
+
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
@@ -482,7 +485,28 @@ export function App() {
           </div>
           <div>
             <h1 className="brand-title">MedClock</h1>
-            <p className="brand-subtitle">Medication Reminders &amp; Linked Alarms</p>
+            <div className="brand-version-row">
+              <span className="tabular-nums">v{APP_VERSION}</span>
+              <span aria-hidden="true">•</span>
+              {isNativeAndroid() ? (
+                <a
+                  className="brand-update-link"
+                  href={LATEST_APK_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Update
+                </a>
+              ) : (
+                <button
+                  type="button"
+                  className="brand-update-link"
+                  onClick={() => window.location.reload()}
+                >
+                  Update
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
