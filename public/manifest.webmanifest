@@ -1,18 +1,38 @@
 {
+  "id": "./",
   "name": "MedClock — Medication & Alarm",
   "short_name": "MedClock",
-  "description": "Reliable medication reminder and general alarm clock PWA with persistent audio, snooze, refill alerts, and adherence history.",
+  "description": "Reliable medication reminder and alarm clock app with persistent audio, snooze, refill alerts, and adherence history.",
   "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#F0F9FF",
   "theme_color": "#0369A1",
   "orientation": "portrait-primary",
   "icons": [
     {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
       "src": "./icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "purpose": "any"
     }
   ]
 }

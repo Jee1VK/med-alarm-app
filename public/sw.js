@@ -1,5 +1,14 @@
-const CACHE_NAME = 'medclock-v1';
-const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon.svg'];
+const CACHE_NAME = 'medclock-v2';
+const ASSETS = [
+  './',
+  './index.html',
+  './manifest.webmanifest',
+  './icon.svg',
+  './icon-192.png',
+  './icon-512.png',
+  './apple-touch-icon.png',
+  './logo.png',
+];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

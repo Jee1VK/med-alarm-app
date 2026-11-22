@@ -6,6 +6,7 @@ import {
   BellRing,
   CalendarClock,
   Check,
+  Download,
   History,
   Moon,
   Pencil,
@@ -41,6 +42,11 @@ import {
 
 type Tab = 'today' | 'medications' | 'alarms' | 'history';
 
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+}
+
 export function App() {
   const initial = useMemo(() => loadInitialData(), []);
 
@@ -60,6 +66,12 @@ export function App() {
   const [notifPermission, setNotifPermission] = useState<NotificationPermission | 'unsupported'>(() =>
     'Notification' in window ? Notification.permission : 'unsupported'
   );
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [isStandalone, setIsStandalone] = useState<boolean>(() =>
+    window.matchMedia?.('(display-mode: standalone)').matches ||
+    (window.navigator as unknown as { standalone?: boolean }).standalone === true
+  );
+  const [showIosInstallTip, setShowIosInstallTip] = useState(false);
 
   // Modals
   const [medModalOpen, setMedModalOpen] = useState(false);
@@ -76,6 +88,35 @@ export function App() {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem('medclock.theme.v1', theme);
   }, [theme]);
+
+  useEffect(() => {
+    const onBeforeInstall = (e: Event) => {
+      e.preventDefault();
+      setInstallPrompt(e as BeforeInstallPromptEvent);
+    };
+    const onInstalled = () => {
+      setIsStandalone(true);
+      setInstallPrompt(null);
+    };
+    window.addEventListener('beforeinstallprompt', onBeforeInstall);
+    window.addEventListener('appinstalled', onInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onBeforeInstall);
+      window.removeEventListener('appinstalled', onInstalled);
+    };
+  }, []);
+
+  const handleInstallApp = async () => {
+    if (installPrompt) {
+      await installPrompt.prompt();
+      const choice = await installPrompt.userChoice;
+      if (choice.outcome === 'accepted') {
+        setInstallPrompt(null);
+      }
+      return;
+    }
+    setShowIosInstallTip((prev) => !prev);
+  };
 
   const handleOneTimeAlarmFired = useCallback((alarmId: string) => {
     setAlarms((prev) => prev.map((a) => (a.id === alarmId ? { ...a, enabled: false } : a)));
@@ -296,8 +337,8 @@ export function App() {
     <div className="app-shell">
       <header className="app-header">
         <div className="brand-lockup">
-          <div className="brand-mark" aria-hidden="true">
-            <AlarmClock size={22} />
+          <div className="brand-mark" style={{ overflow: 'hidden', background: 'transparent' }} aria-hidden="true">
+            <img src="./logo.png" alt="" width={42} height={42} style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover' }} />
           </div>
           <div>
             <h1 className="brand-title">MedClock</h1>
@@ -306,6 +347,15 @@ export function App() {
         </div>
 
         <div className="header-actions">
+          {!isStandalone && (
+            <button
+              type="button"
+              className="btn btn--primary btn--sm"
+              onClick={handleInstallApp}
+            >
+              <Download size={16} aria-hidden="true" /> Install App
+            </button>
+          )}
           <button
             type="button"
             className="icon-btn"
@@ -356,6 +406,17 @@ export function App() {
       {/* TODAY TAB */}
       {tab === 'today' && (
         <main>
+          {showIosInstallTip && !isStandalone && (
+            <div className="banner banner--info" role="status">
+              <span>
+                <strong>Install on your device:</strong> On iPhone/iPad Safari tap <strong>Share → Add to Home Screen</strong>. On Chrome/Edge desktop or Android, use the browser menu <strong>Install MedClock</strong>.
+              </span>
+              <button type="button" className="btn btn--secondary btn--sm" onClick={() => setShowIosInstallTip(false)}>
+                Got it
+              </button>
+            </div>
+          )}
+
           <section className="hero-clock-card" aria-label="Live clock and next reminder">
             <div>
               <div className="hero-time tabular-nums">{formattedClock}</div>
