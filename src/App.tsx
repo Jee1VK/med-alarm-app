@@ -7,10 +7,12 @@ import {
   CalendarClock,
   Check,
   History,
+  Moon,
   Pencil,
   Pill,
   Plus,
   RefreshCw,
+  Sun,
   Trash2,
   Volume2,
 } from 'lucide-react';
@@ -46,7 +48,13 @@ export function App() {
   const [medications, setMedications] = useState<Medication[]>(initial.medications);
   const [alarms, setAlarms] = useState<GeneralAlarm[]>(initial.alarms);
   const [logs, setLogs] = useState<LogEntry[]>(initial.logs);
-  const [settings] = useState<AppSettings>(initial.settings);
+  const [settings, setSettings] = useState<AppSettings>(initial.settings);
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    const saved = localStorage.getItem('medclock.theme.v1');
+    if (saved === 'light' || saved === 'dark') return saved;
+    return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  });
+  const [confirmClearLog, setConfirmClearLog] = useState(false);
 
   const [audioUnlocked, setAudioUnlocked] = useState(false);
   const [notifPermission, setNotifPermission] = useState<NotificationPermission | 'unsupported'>(() =>
@@ -64,6 +72,10 @@ export function App() {
   useEffect(() => saveAlarms(alarms), [alarms]);
   useEffect(() => saveLogs(logs), [logs]);
   useEffect(() => saveSettings(settings), [settings]);
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem('medclock.theme.v1', theme);
+  }, [theme]);
 
   const handleOneTimeAlarmFired = useCallback((alarmId: string) => {
     setAlarms((prev) => prev.map((a) => (a.id === alarmId ? { ...a, enabled: false } : a)));
@@ -293,25 +305,37 @@ export function App() {
           </div>
         </div>
 
-        <button
-          type="button"
-          className="btn btn--secondary btn--sm"
-          onClick={() =>
-            triggerTestRing({
-              key: `test-${Date.now()}`,
-              kind: 'medication',
-              itemId: 'test',
-              title: 'Test Medication Alarm',
-              subtitle: '1 tablet • Sound & Snooze Check',
-              scheduledTime: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
-              tone: 'temple_chime',
-              vibrate: true,
-              foodTiming: 'after_food',
-            })
-          }
-        >
-          <BellRing size={16} /> Test Alarm
-        </button>
+        <div className="header-actions">
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label={theme === 'dark' ? 'Switch to Daylight Mode' : 'Switch to Bedside Night Mode'}
+            title={theme === 'dark' ? 'Daylight Mode' : 'Bedside Night Mode'}
+            onClick={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
+          >
+            {theme === 'dark' ? <Sun size={18} aria-hidden="true" /> : <Moon size={18} aria-hidden="true" />}
+          </button>
+
+          <button
+            type="button"
+            className="btn btn--secondary btn--sm"
+            onClick={() =>
+              triggerTestRing({
+                key: `test-${Date.now()}`,
+                kind: 'medication',
+                itemId: 'test',
+                title: 'Test Medication Alarm',
+                subtitle: '1 tablet • Sound & Snooze Check',
+                scheduledTime: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
+                tone: 'temple_chime',
+                vibrate: true,
+                foodTiming: 'after_food',
+              })
+            }
+          >
+            <BellRing size={16} aria-hidden="true" /> Test Alarm
+          </button>
+        </div>
       </header>
 
       <nav className="desktop-nav" aria-label="Main navigation">
@@ -350,6 +374,26 @@ export function App() {
               )}
             </div>
           </section>
+
+          {(() => {
+            const todayMeds = todaySchedule.filter((r) => r.kind === 'medication');
+            const takenCount = todayMeds.filter((r) => r.status === 'taken').length;
+            if (todayMeds.length === 0) return null;
+            const pct = Math.round((takenCount / todayMeds.length) * 100);
+            return (
+              <section className="progress-card" aria-label="Today's medication progress">
+                <div className="progress-header">
+                  <span>Today&apos;s Medication Progress</span>
+                  <span className="tabular-nums" style={{ color: 'var(--color-brand-secondary)' }}>
+                    {takenCount} / {todayMeds.length} taken ({pct}%)
+                  </span>
+                </div>
+                <div className="progress-track">
+                  <div className="progress-fill" style={{ width: `${pct}%` }} />
+                </div>
+              </section>
+            );
+          })()}
 
           {!audioUnlocked && (
             <div className="banner banner--warning" role="status">
@@ -446,7 +490,7 @@ export function App() {
                   return (
                     <article
                       key={row.key}
-                      className={`item-card ${status !== 'pending' ? 'item-card--dim' : ''}`}
+                      className={`item-card ${status !== 'pending' ? 'item-card--done' : ''}`}
                     >
                       <div className="item-meta">
                         <div className="item-title-row">
@@ -487,14 +531,14 @@ export function App() {
 
                 const { alarm } = row;
                 return (
-                  <article key={row.key} className="item-card">
+                  <article key={row.key} className="item-card item-card--alarm">
                     <div className="item-meta">
                       <div className="item-title-row">
-                        <span className="tabular-nums" style={{ fontWeight: 700, color: 'var(--color-brand-primary)' }}>
+                        <span className="tabular-nums" style={{ fontWeight: 700, color: 'var(--color-alarm-indigo)' }}>
                           {formatTime12h(alarm.time)}
                         </span>
                         <h3 className="item-title">{alarm.label}</h3>
-                        <span className="badge">Alarm</span>
+                        <span className="badge badge--blue">Alarm</span>
                       </div>
                       <div className="item-sub">{formatDaysSummary(alarm.days)}</div>
                     </div>
@@ -726,14 +770,60 @@ export function App() {
           <div className="section-header">
             <h2 className="section-title">Adherence &amp; History</h2>
             {logs.length > 0 && (
-              <button
-                type="button"
-                className="btn btn--danger btn--sm"
-                onClick={() => setLogs([])}
-              >
-                Clear Log
-              </button>
+              confirmClearLog ? (
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    type="button"
+                    className="btn btn--danger btn--sm"
+                    onClick={() => {
+                      setLogs([]);
+                      setConfirmClearLog(false);
+                    }}
+                  >
+                    Confirm Clear
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--secondary btn--sm"
+                    onClick={() => setConfirmClearLog(false)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn--danger btn--sm"
+                  onClick={() => setConfirmClearLog(true)}
+                >
+                  Clear Log
+                </button>
+              )
             )}
+          </div>
+
+          <div className="card" style={{ marginBottom: 14 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label htmlFor="alarm-volume" className="field-label">
+                  Alarm Volume
+                </label>
+                <span className="tabular-nums" style={{ fontWeight: 700 }}>
+                  {Math.round(settings.defaultVolume * 100)}%
+                </span>
+              </div>
+              <input
+                id="alarm-volume"
+                type="range"
+                min={0.2}
+                max={1}
+                step={0.1}
+                value={settings.defaultVolume}
+                onChange={(e) =>
+                  setSettings((prev) => ({ ...prev, defaultVolume: Number(e.target.value) }))
+                }
+              />
+            </div>
           </div>
 
           <div className="card" style={{ marginBottom: 14 }}>

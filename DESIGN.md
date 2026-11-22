@@ -1,51 +1,39 @@
-# DESIGN.md - Kuberan MedClock & Alarm PWA Design System
-<!-- Specification Standard: Google Stitch DESIGN.md -->
-<!-- Version: 1.0.0 -->
+# DESIGN.md - MedClock Design System
+<!-- Specification Standard: Google Stitch DESIGN.md + UI/UX Pro Max Medication & Pill Reminder Palette -->
+<!-- Version: 2.0.0 -->
 
 ## 1. Design Philosophy & Vibe
-**MedClock** combines the warmth and clarity of Kuberan's heritage aesthetic with clinical-grade legibility for daily medication adherence and reliable alarm management. Every screen prioritizes instant time recognition, zero-ambiguity dosage instructions, and large, calming, tactile controls.
+**MedClock** uses a **Calm Clinical Sky & Health Emerald** palette paired with **Bedside Night Mode**—designed specifically for effortless readability when groggy in the morning or checking night doses in a dim room.
 
 ### Core Principles
-1. **Calm Authority:** Warm Pearl Ivory canvas (`#FAFAF7`) paired with Imperial Kumkum Maroon (`#6B1D2F`) primary actions and Antique Temple Gold (`#C5A059`) accents—never harsh clinical neon or generic dark-navy AI gradients.
-2. **Unmistakable Readability:** `tabular-nums` for all clocks, countdowns, and dosage quantities so digits never jitter.
-3. **Accessibility First:** WCAG 2.2 AA/AAA contrast ratios, minimum `44×44px` touch targets on all interactive controls, native `<dialog>` top-layer modals with scroll containment, and `:user-invalid` deferred form validation.
+1. **Semantic Color Coding:** Clinical Blue (`#0369A1`) for medications, Health Emerald (`#047857`) for taken/completed doses, Warm Indigo (`#4F46E5`) for general alarms, and Alert Red (`#DC2626`) for active ringing & low-stock refills.
+2. **Daylight & Bedside Night Modes:** Light mode (`#F0F9FF` soft sky canvas) for daytime clarity; Dark mode (`#0B1120` deep night canvas) for zero-glare bedside use.
+3. **Accessibility First:** WCAG 2.2 AA/AAA contrast (`>= 4.5:1`), minimum `44×44px` touch targets, `prefers-reduced-motion` support, `tabular-nums` clocks, and native `<dialog>` modals.
 
 ---
 
 ## 2. Design Tokens
 ```css
 :root {
-  /* Brand Identity Tokens */
-  --color-brand-primary:      #6B1D2F; /* Imperial Kumkum Maroon */
-  --color-brand-primary-hover:#541524;
-  --color-brand-accent:       #C5A059; /* Antique Temple Gold */
-  --color-brand-secondary:    #1B4D3E; /* Auspicious Temple Green */
+  --color-brand-primary: #0369A1;      /* Clinical Sky Blue */
+  --color-brand-primary-hover: #075985;
+  --color-brand-accent: #0891B2;       /* Calm Cyan */
+  --color-brand-secondary: #047857;    /* Health Emerald */
+  --color-alarm-indigo: #4F46E5;       /* General Alarm Accent */
 
-  /* Canvas & Surface Tokens */
-  --color-canvas-base:        #FAFAF7; /* Warm Pearl Ivory */
-  --color-surface-card:       #FFFFFF; /* Pure White */
-  --color-surface-elevated:   #F3EFEA; /* Soft Sandstone */
-  --color-border-subtle:      #EAE5DC; /* Crisp 1px tactile divider */
-  --color-border-focus:       #C5A059; /* Zari Gold Focus Ring */
+  --color-canvas-base: #F0F9FF;        /* Soothing Sky Canvas */
+  --color-surface-card: #FFFFFF;       /* Crisp Pure White */
+  --color-surface-elevated: #E0F2FE;   /* Soft Ice Blue */
+  --color-border-subtle: #BAE6FD;      /* Crisp Sky Divider */
+  --color-border-focus: #0284C7;
 
-  /* Text & Readability Tokens */
-  --color-text-primary:       #1C1917; /* Charcoal Slate */
-  --color-text-secondary:     #4B5563; /* Warm Neutral */
-  --color-text-muted:         #6B7280; /* Subtle Gray */
-  --color-text-inverse:       #FFFFFF; /* Pure White */
+  --color-text-primary: #0F172A;       /* Deep Slate */
+  --color-text-secondary: #334155;     /* Slate 700 */
+  --color-text-muted: #475569;         /* Slate 600 */
+  --color-text-inverse: #FFFFFF;
 
-  /* Semantic Feedback Tokens */
-  --color-feedback-success:   #15803D;
-  --color-feedback-warning:   #B45309;
-  --color-feedback-error:     #B91C1C;
+  --color-feedback-success: #047857;
+  --color-feedback-warning: #B45309;
+  --color-feedback-error: #DC2626;
 }
 ```
-
----
-
-## 3. Typography & Spatial Scale
-- **Display / Editorial:** `"Cormorant Garamond", Georgia, serif`
-- **UI & Body:** `"Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif`
-- **Clocks / Timers / Dosages:** `"JetBrains Mono", Consolas, monospace` with `font-variant-numeric: tabular-nums`
-- **Radii:** `6px` cards, `8px` modals/dialogs, `4px` badges/chips, `9999px` pill switches.
-- **Motion:** Composite-only (`transform`, `opacity`), `cubic-bezier(0.23, 1, 0.32, 1)` (`180ms–260ms`), tactile `:active { transform: scale(0.97); }`.

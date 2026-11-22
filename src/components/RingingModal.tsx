@@ -34,7 +34,7 @@ export function RingingModal({
   return (
     <dialog
       ref={dialogRef}
-      className="ring-dialog"
+      className={`ring-dialog ${target?.kind === 'medication' ? 'ring-dialog--med' : ''}`}
       aria-labelledby="ring-dialog-title"
       onCancel={(e) => {
         // Prevent accidental Esc dismissal of an active medication/alarm ring
@@ -48,7 +48,7 @@ export function RingingModal({
           </div>
 
           <div>
-            <div className="badge badge--gold">
+            <div className="badge badge--blue">
               {target.kind === 'medication' ? 'Medication Reminder' : 'Alarm'}
               {queueCount > 1 ? ` (+${queueCount - 1} waiting)` : ''}
             </div>
