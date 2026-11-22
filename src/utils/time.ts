@@ -15,7 +15,7 @@ export function toHHMM(date: Date): string {
   return `${h}:${m}`;
 }
 
-export function formatTime12h(hhmm: string): string {
+export function formatTime(hhmm: string, use24Hour = false): string {
   const parts = hhmm.split(':');
   if (parts.length !== 2) return hhmm;
   const h = Number(parts[0]);
@@ -23,9 +23,16 @@ export function formatTime12h(hhmm: string): string {
   if (!Number.isFinite(h) || !Number.isFinite(m) || h < 0 || h > 23 || m < 0 || m > 59) {
     return hhmm;
   }
+  if (use24Hour) {
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  }
   const period = h >= 12 ? 'PM' : 'AM';
   const h12 = h % 12 === 0 ? 12 : h % 12;
   return `${h12}:${String(m).padStart(2, '0')} ${period}`;
+}
+
+export function formatTime12h(hhmm: string): string {
+  return formatTime(hhmm, false);
 }
 
 export function formatDaysSummary(days: number[]): string {

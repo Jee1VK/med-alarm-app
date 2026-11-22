@@ -5,6 +5,7 @@ import { computeStreak, getEarnedBadges } from '../gamification';
 import {
   daysUntilExpiry,
   formatCountdown,
+  formatTime,
   formatTime12h,
   getMedicationTimes,
   signedMinutesUntil,
@@ -29,10 +30,12 @@ const baseMed: Medication = {
 };
 
 describe('time utilities', () => {
-  it('formats 24h times into 12h AM/PM including midnight and noon', () => {
+  it('formats 24h times into 12h AM/PM or 24h including midnight and noon', () => {
     expect(formatTime12h('00:00')).toBe('12:00 AM');
     expect(formatTime12h('12:00')).toBe('12:00 PM');
     expect(formatTime12h('18:30')).toBe('6:30 PM');
+    expect(formatTime('08:05', true)).toBe('08:05');
+    expect(formatTime('18:30', true)).toBe('18:30');
     expect(formatTime12h('invalid')).toBe('invalid');
   });
 

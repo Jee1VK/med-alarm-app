@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import { BellRing, CheckCircle2, Clock, SkipForward } from 'lucide-react';
 import type { RingingTarget } from '../types';
 import { getMedPhoto } from '../utils/imageStore';
-import { foodTimingLabel, formatTime12h } from '../utils/time';
+import { foodTimingLabel, formatTime } from '../utils/time';
 
 interface RingingModalProps {
   target: RingingTarget | null;
   queueCount: number;
+  use24Hour?: boolean;
   onMarkTaken: (target: RingingTarget) => void;
   onSnooze: (minutes: number) => void;
   onSkipMed: (target: RingingTarget) => void;
@@ -15,6 +16,7 @@ interface RingingModalProps {
 export function RingingModal({
   target,
   queueCount,
+  use24Hour = false,
   onMarkTaken,
   onSnooze,
   onSkipMed,
@@ -94,7 +96,7 @@ export function RingingModal({
               {target.title}
             </h2>
             <p style={{ margin: 0, fontSize: '1.05rem', opacity: 0.92 }}>
-              {target.subtitle} • <span className="tabular-nums">{formatTime12h(target.scheduledTime)}</span>
+              {target.subtitle} • <span className="tabular-nums">{formatTime(target.scheduledTime, use24Hour)}</span>
             </p>
           </div>
 

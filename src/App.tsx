@@ -60,7 +60,7 @@ import {
   foodTimingLabel,
   formatCountdown,
   formatDaysSummary,
-  formatTime12h,
+  formatTime,
   getMedicationTimes,
   signedMinutesUntil,
   toDateKey,
@@ -470,10 +470,14 @@ export function App() {
     return days;
   }, [logs, now]);
 
+  const use24Hour = Boolean(settings.use24Hour);
+  const fmtTime = (hhmm: string) => formatTime(hhmm, use24Hour);
+
   const formattedClock = now.toLocaleTimeString([], {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
+    hour12: !use24Hour,
   });
   const formattedDate = now.toLocaleDateString([], {
     weekday: 'long',
@@ -627,7 +631,27 @@ export function App() {
           <section className="hero-clock-card" aria-label="Live clock and next dose">
             <div>
               <div className="hero-time tabular-nums">{formattedClock}</div>
-              <div className="hero-date">{formattedDate}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4, flexWrap: 'wrap' }}>
+                <div className="hero-date" style={{ marginTop: 0 }}>{formattedDate}</div>
+                <button
+                  type="button"
+                  aria-label={`Switch to ${use24Hour ? '12-hour' : '24-hour'} clock`}
+                  onClick={() => setSettings((prev) => ({ ...prev, use24Hour: !prev.use24Hour }))}
+                  style={{
+                    minHeight: 30,
+                    padding: '2px 10px',
+                    borderRadius: 9999,
+                    border: '1px solid rgba(255,255,255,0.35)',
+                    background: 'rgba(255,255,255,0.14)',
+                    color: '#FFFFFF',
+                    fontSize: '0.76rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {use24Hour ? '24h' : '12h'}
+                </button>
+              </div>
             </div>
             <div className="hero-next-pill">
               <div className="hero-next-label">
@@ -636,7 +660,7 @@ export function App() {
               {nextUpcoming ? (
                 <div className="hero-next-value">
                   {nextUpcoming.item.title} •{' '}
-                  <span className="tabular-nums">{formatTime12h(nextUpcoming.item.time)}</span> (
+                  <span className="tabular-nums">{fmtTime(nextUpcoming.item.time)}</span> (
                   {formatCountdown(nextUpcoming.item.mins)})
                   {nextUpcoming.overdueCount > 0 && nextUpcoming.kind === 'upcoming'
                     ? ` • ${nextUpcoming.overdueCount} overdue`
@@ -732,7 +756,7 @@ export function App() {
                 {snoozed
                   .map((s) => {
                     const minsLeft = Math.max(1, Math.ceil((s.wakeAtMs - now.getTime()) / 60000));
-                    return `${formatTime12h(s.scheduledTime)} (${minsLeft}m left)`;
+                    return `${fmtTime(s.scheduledTime)} (${minsLeft}m left)`;
                   })
                   .join(', ')}
               </div>
@@ -832,7 +856,7 @@ export function App() {
                           className="tabular-nums"
                           style={{ fontWeight: 700, color: 'var(--color-brand-primary)' }}
                         >
-                          {formatTime12h(time)}
+                          {fmtTime(time)}
                         </span>
                         <h3 className="item-title">{med.name}</h3>
                         <span className="badge badge--gold">{foodTimingLabel(med.foodTiming)}</span>
@@ -997,7 +1021,7 @@ export function App() {
                         ) : (
                           <>
                             <span className="tabular-nums">
-                              {expandedTimes.map((t) => formatTime12h(t)).join(', ')}
+                              {expandedTimes.map((t) => fmtTime(t)).join(', ')}
                             </span>{' '}
                             {med.scheduleMode === 'interval' ? `(Every ${med.intervalHours}h) ` : ''}•{' '}
                             {formatDaysSummary(med.days)}
@@ -1286,6 +1310,28 @@ export function App() {
                 <span className="field-label">Play victory chime when marking a dose taken</span>
               </label>
 
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                <span className="field-label">Time Format</span>
+                <div style={{ display: 'flex', gap: 6 }} role="group" aria-label="Time format">
+                  <button
+                    type="button"
+                    className={`btn btn--sm ${!use24Hour ? 'btn--primary' : 'btn--secondary'}`}
+                    aria-pressed={!use24Hour}
+                    onClick={() => setSettings((prev) => ({ ...prev, use24Hour: false }))}
+                  >
+                    12-Hour (AM/PM)
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn btn--sm ${use24Hour ? 'btn--primary' : 'btn--secondary'}`}
+                    aria-pressed={use24Hour}
+                    onClick={() => setSettings((prev) => ({ ...prev, use24Hour: true }))}
+                  >
+                    24-Hour
+                  </button>
+                </div>
+              </div>
+
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, paddingTop: 6, borderTop: '1px solid var(--color-border-subtle)' }}>
                 <button
                   type="button"
@@ -1383,12 +1429,13 @@ export function App() {
                     </div>
                     <div className="item-sub">
                       {entry.subtitle} • Scheduled{' '}
-                      <span className="tabular-nums">{formatTime12h(entry.scheduledTime)}</span> •{' '}
+                      <span className="tabular-nums">{fmtTime(entry.scheduledTime)}</span> •{' '}
                       {new Date(entry.timestamp).toLocaleString([], {
                         month: 'short',
                         day: 'numeric',
                         hour: '2-digit',
                         minute: '2-digit',
+                        hour12: !use24Hour,
                       })}
                     </div>
                   </div>
@@ -1419,6 +1466,7 @@ export function App() {
       <RingingModal
         target={activeRing}
         queueCount={ringQueueCount}
+        use24Hour={use24Hour}
         onMarkTaken={handleRingMarkTaken}
         onSnooze={handleRingSnooze}
         onSkipMed={handleRingSkipMed}

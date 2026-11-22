@@ -97,4 +97,5 @@ export interface AppSettings {
   defaultVolume: number; // 0.2 .. 1.0
   keepScreenAwake: boolean;
   playSuccessChime?: boolean;
+  use24Hour?: boolean;
 }
