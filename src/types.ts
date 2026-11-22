@@ -99,3 +99,34 @@ export interface AppSettings {
   playSuccessChime?: boolean;
   use24Hour?: boolean;
 }
+
+export interface CaregiverShareConfig {
+  enabled: boolean;
+  code: string;
+  writeSecret: string;
+  patientLabel: string;
+  pinHash?: string;
+  syncServerUrl: string;
+  lastSyncedAt?: string;
+}
+
+export interface CaregiverWatchConfig {
+  code: string;
+  pinHash?: string;
+  syncServerUrl: string;
+  ringOnThisPhone: boolean;
+  lastFetchedAt?: string;
+}
+
+export interface CaregiverSnapshot {
+  version: 1;
+  code: string;
+  patientLabel: string;
+  updatedAt: string;
+  streak: number;
+  adherencePct: number;
+  medications: Medication[];
+  recentLogs: LogEntry[];
+  pinHash?: string;
+  writeSecret?: string;
+}

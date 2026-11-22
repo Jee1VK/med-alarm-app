@@ -22,14 +22,35 @@ import {
   Sun,
   Trash2,
   Upload,
+  Users,
   Volume2,
 } from 'lucide-react';
+import { CaregiverPanel } from './components/CaregiverPanel';
 import { MedicationModal } from './components/MedicationModal';
 import { PhotoViewerModal } from './components/PhotoViewerModal';
 import { RingingModal } from './components/RingingModal';
 import { useAlarmScheduler } from './hooks/useAlarmScheduler';
-import type { AppSettings, LogEntry, Medication, RingingTarget } from './types';
+import type {
+  AppSettings,
+  CaregiverShareConfig,
+  CaregiverSnapshot,
+  CaregiverWatchConfig,
+  LogEntry,
+  Medication,
+  RingingTarget,
+} from './types';
 import { alarmAudio } from './utils/alarmAudio';
+import {
+  buildCaregiverSnapshot,
+  fetchCaregiverSnapshot,
+  loadCachedWatchedSnapshot,
+  loadShareConfig,
+  loadWatchConfig,
+  pushCaregiverSnapshot,
+  saveCachedWatchedSnapshot,
+  saveShareConfig,
+  saveWatchConfig,
+} from './utils/caregiverSync';
 import { exportBackupJson, exportHistoryCsv, parseBackupJson } from './utils/exportData';
 import { ENCOURAGING_MESSAGES, computeStreak, getEarnedBadges } from './utils/gamification';
 import {
@@ -67,7 +88,7 @@ import {
   toHHMM,
 } from './utils/time';
 
-type Tab = 'today' | 'medications' | 'history';
+type Tab = 'today' | 'medications' | 'history' | 'caregiver';
 
 const APP_VERSION: string = import.meta.env.VITE_APP_VERSION || '1.0.0';
 const LATEST_APK_URL = 'https://github.com/Jee1VK/med-alarm-app/releases/latest/download/MedClock.apk';
@@ -112,13 +133,75 @@ export function App() {
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
   const [nativeScheduledCount, setNativeScheduledCount] = useState<number | null>(null);
+  const [shareConfig, setShareConfig] = useState<CaregiverShareConfig>(() => loadShareConfig());
+  const [watchConfig, setWatchConfig] = useState<CaregiverWatchConfig | null>(() => loadWatchConfig());
+  const [watchedSnapshot, setWatchedSnapshot] = useState<CaregiverSnapshot | null>(() =>
+    loadCachedWatchedSnapshot()
+  );
   const toastIdxRef = useRef(0);
+
+  // Persist Caregiver configs & auto-push live snapshots when enabled
+  useEffect(() => saveShareConfig(shareConfig), [shareConfig]);
+  useEffect(() => saveWatchConfig(watchConfig), [watchConfig]);
+  useEffect(() => saveCachedWatchedSnapshot(watchedSnapshot), [watchedSnapshot]);
+
+  useEffect(() => {
+    if (!shareConfig.enabled || !shareConfig.syncServerUrl.trim()) return;
+    const timer = window.setTimeout(() => {
+      const snap = buildCaregiverSnapshot(shareConfig, medications, logs);
+      void pushCaregiverSnapshot(shareConfig, snap);
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [shareConfig, medications, logs]);
+
+  // Auto-refresh watched person's progress every 60s & when returning to foreground
+  useEffect(() => {
+    if (!watchConfig) return;
+    const poll = () => {
+      void fetchCaregiverSnapshot(watchConfig).then((res) => {
+        if (res.snapshot) setWatchedSnapshot(res.snapshot);
+      });
+    };
+    poll();
+    const timer = window.setInterval(poll, 60_000);
+    const onVis = () => {
+      if (document.visibilityState === 'visible') poll();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, [watchConfig]);
+
+  // Merge watched person's alarms into scheduler/OS AlarmManager ONLY if "Ring Alarms on This Phone" is ON
+  const schedulerMedications = useMemo(() => {
+    if (!watchConfig?.ringOnThisPhone || !watchedSnapshot) return medications;
+    const caregiverMeds: Medication[] = watchedSnapshot.medications
+      .filter((m) => m.enabled && m.scheduleMode !== 'prn')
+      .map((m) => ({
+        ...m,
+        id: `cg:${m.id}`,
+        name: `${watchedSnapshot.patientLabel}: ${m.name}`,
+      }));
+    return [...medications, ...caregiverMeds];
+  }, [medications, watchConfig?.ringOnThisPhone, watchedSnapshot]);
+
+  const schedulerLogs = useMemo(() => {
+    if (!watchConfig?.ringOnThisPhone || !watchedSnapshot) return logs;
+    const caregiverLogs: LogEntry[] = watchedSnapshot.recentLogs.map((l) => ({
+      ...l,
+      id: `cg:${l.id}`,
+      itemId: `cg:${l.itemId}`,
+    }));
+    return [...logs, ...caregiverLogs];
+  }, [logs, watchConfig?.ringOnThisPhone, watchedSnapshot]);
 
   useEffect(() => {
     saveMedications(medications);
     if (!isNativeAndroid()) return;
     const syncNow = () => {
-      void syncNativeMedicationAlarms(medications).then((count) => {
+      void syncNativeMedicationAlarms(schedulerMedications).then((count) => {
         setNativeScheduledCount(count);
       });
     };
@@ -132,7 +215,7 @@ export function App() {
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('focus', syncNow);
     };
-  }, [medications]);
+  }, [medications, schedulerMedications]);
   useEffect(() => {
     void initNativeAlarms();
   }, []);
@@ -181,15 +264,15 @@ export function App() {
     snoozeCurrentRing,
     triggerTestRing,
   } = useAlarmScheduler({
-    medications,
-    logs,
+    medications: schedulerMedications,
+    logs: schedulerLogs,
     settings,
   });
 
   // When a user taps a closed-app Android alarm notification, jump straight to its RingingModal
   useEffect(() => {
     return subscribeNativeAlarmTap((medId, scheduledTime) => {
-      const med = medications.find((m) => m.id === medId);
+      const med = schedulerMedications.find((m) => m.id === medId);
       if (!med) return;
       triggerTestRing({
         key: `medication:${med.id}:${scheduledTime}`,
@@ -207,7 +290,7 @@ export function App() {
         hasTabletPhoto: med.hasTabletPhoto,
       });
     });
-  }, [medications, triggerTestRing]);
+  }, [schedulerMedications, triggerTestRing]);
 
   const todayKey = toDateKey(now);
   const todayDow = now.getDay();
@@ -489,6 +572,7 @@ export function App() {
     { id: 'today', label: 'Today', icon: CalendarClock },
     { id: 'medications', label: 'Medications', icon: Pill },
     { id: 'history', label: 'History', icon: History },
+    { id: 'caregiver', label: 'Caregiver', icon: Users },
   ];
 
   const takenTodayCount = todaySchedule.filter((r) => r.status === 'taken').length;
@@ -1444,6 +1528,22 @@ export function App() {
             </div>
           )}
         </main>
+      )}
+
+      {/* CAREGIVER TAB */}
+      {tab === 'caregiver' && (
+        <CaregiverPanel
+          medications={medications}
+          logs={logs}
+          now={now}
+          use24Hour={use24Hour}
+          shareConfig={shareConfig}
+          onUpdateShareConfig={setShareConfig}
+          watchConfig={watchConfig}
+          onUpdateWatchConfig={setWatchConfig}
+          watchedSnapshot={watchedSnapshot}
+          onUpdateWatchedSnapshot={setWatchedSnapshot}
+        />
       )}
 
       {/* Mobile Bottom Nav */}

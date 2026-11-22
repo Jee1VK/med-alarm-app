@@ -1,0 +1,7 @@
+name = "medclock-caregiver-sync"
+main = "caregiver-relay.js"
+compatibility_date = "2026-11-01"
+
+[[kv_namespaces]]
+binding = "MEDCLOCK_SYNC"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
