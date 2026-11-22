@@ -216,7 +216,7 @@ body {
   right: 0;
   z-index: 20;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   background: var(--color-surface-card);
   border-top: 1px solid var(--color-border-subtle);
   padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
@@ -226,7 +226,7 @@ body {
 @media (min-width: 680px) {
   .desktop-nav {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(3, 1fr);
   }
   .mobile-nav {
     display: none;

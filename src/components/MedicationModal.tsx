@@ -21,6 +21,7 @@ export function MedicationModal({ open, editing, onClose, onSave }: MedicationMo
   const [days, setDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
   const [foodTiming, setFoodTiming] = useState<FoodTiming>('after_food');
   const [tone, setTone] = useState<AlarmTone>('temple_chime');
+  const [vibrate, setVibrate] = useState(true);
   const [notes, setNotes] = useState('');
   const [trackStock, setTrackStock] = useState(true);
   const [remainingDoses, setRemainingDoses] = useState(30);
@@ -36,6 +37,7 @@ export function MedicationModal({ open, editing, onClose, onSave }: MedicationMo
       setDays(editing.days);
       setFoodTiming(editing.foodTiming);
       setTone(editing.tone);
+      setVibrate(editing.vibrate ?? true);
       setNotes(editing.notes ?? '');
       setTrackStock(editing.trackStock);
       setRemainingDoses(editing.remainingDoses);
@@ -49,6 +51,7 @@ export function MedicationModal({ open, editing, onClose, onSave }: MedicationMo
       setDays([0, 1, 2, 3, 4, 5, 6]);
       setFoodTiming('after_food');
       setTone('temple_chime');
+      setVibrate(true);
       setNotes('');
       setTrackStock(true);
       setRemainingDoses(30);
@@ -86,6 +89,7 @@ export function MedicationModal({ open, editing, onClose, onSave }: MedicationMo
       foodTiming,
       notes: notes.trim() || undefined,
       tone,
+      vibrate,
       enabled: editing?.enabled ?? true,
       trackStock,
       remainingDoses: Math.max(0, remainingDoses),
@@ -145,7 +149,7 @@ export function MedicationModal({ open, editing, onClose, onSave }: MedicationMo
           </div>
 
           <div className="field">
-            <span className="field-label">Reminder Times</span>
+            <span className="field-label">Linked Alarm Times</span>
             <div className="stack">
               {times.map((t, idx) => (
                 <div key={idx} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -153,7 +157,7 @@ export function MedicationModal({ open, editing, onClose, onSave }: MedicationMo
                     className="input tabular-nums"
                     type="time"
                     required
-                    aria-label={`Reminder time ${idx + 1}`}
+                    aria-label={`Alarm time ${idx + 1}`}
                     value={t}
                     onChange={(e) => {
                       const next = [...times];
@@ -166,7 +170,7 @@ export function MedicationModal({ open, editing, onClose, onSave }: MedicationMo
                     <button
                       type="button"
                       className="icon-btn"
-                      aria-label={`Remove time ${idx + 1}`}
+                      aria-label={`Remove alarm time ${idx + 1}`}
                       onClick={() => setTimes(times.filter((_, i) => i !== idx))}
                     >
                       <Trash2 size={18} />
@@ -180,13 +184,33 @@ export function MedicationModal({ open, editing, onClose, onSave }: MedicationMo
                 onClick={() => setTimes([...times, '20:00'])}
                 style={{ alignSelf: 'flex-start' }}
               >
-                <Plus size={16} /> Add Another Time
+                <Plus size={16} /> Add Another Alarm Time
               </button>
             </div>
           </div>
 
           <div className="field">
-            <span className="field-label">Repeat Days</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+              <span className="field-label">Alarm Repeat Days</span>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button
+                  type="button"
+                  className="btn btn--secondary btn--sm"
+                  style={{ minHeight: 32, padding: '0 10px', fontSize: '0.78rem' }}
+                  onClick={() => setDays([0, 1, 2, 3, 4, 5, 6])}
+                >
+                  Every day
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--secondary btn--sm"
+                  style={{ minHeight: 32, padding: '0 10px', fontSize: '0.78rem' }}
+                  onClick={() => setDays([1, 2, 3, 4, 5])}
+                >
+                  Weekdays
+                </button>
+              </div>
+            </div>
             <div className="days-grid" role="group" aria-label="Repeat days">
               {DAY_LABELS.map((label, idx) => (
                 <button
@@ -243,6 +267,18 @@ export function MedicationModal({ open, editing, onClose, onSave }: MedicationMo
                 </button>
               </div>
             </div>
+          </div>
+
+          <div className="field">
+            <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={vibrate}
+                onChange={(e) => setVibrate(e.target.checked)}
+                style={{ width: 20, height: 20 }}
+              />
+              <span className="field-label">Vibrate when alarm rings</span>
+            </label>
           </div>
 
           <div className="field">

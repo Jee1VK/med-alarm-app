@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
-  AlarmClock,
   AlertTriangle,
   Bell,
   BellRing,
@@ -17,16 +16,14 @@ import {
   Trash2,
   Volume2,
 } from 'lucide-react';
-import { AlarmModal } from './components/AlarmModal';
 import { MedicationModal } from './components/MedicationModal';
 import { RingingModal } from './components/RingingModal';
 import { useAlarmScheduler } from './hooks/useAlarmScheduler';
-import type { AppSettings, GeneralAlarm, LogEntry, Medication, RingingTarget } from './types';
+import type { AppSettings, LogEntry, Medication, RingingTarget } from './types';
 import { alarmAudio } from './utils/alarmAudio';
 import {
   createId,
   loadInitialData,
-  saveAlarms,
   saveLogs,
   saveMedications,
   saveSettings,
@@ -40,7 +37,7 @@ import {
   toDateKey,
 } from './utils/time';
 
-type Tab = 'today' | 'medications' | 'alarms' | 'history';
+type Tab = 'today' | 'medications' | 'history';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -52,7 +49,6 @@ export function App() {
 
   const [tab, setTab] = useState<Tab>('today');
   const [medications, setMedications] = useState<Medication[]>(initial.medications);
-  const [alarms, setAlarms] = useState<GeneralAlarm[]>(initial.alarms);
   const [logs, setLogs] = useState<LogEntry[]>(initial.logs);
   const [settings, setSettings] = useState<AppSettings>(initial.settings);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -73,15 +69,12 @@ export function App() {
   );
   const [showIosInstallTip, setShowIosInstallTip] = useState(false);
 
-  // Modals
+  // Add/Edit Medication Modal
   const [medModalOpen, setMedModalOpen] = useState(false);
   const [editingMed, setEditingMed] = useState<Medication | null>(null);
-  const [alarmModalOpen, setAlarmModalOpen] = useState(false);
-  const [editingAlarm, setEditingAlarm] = useState<GeneralAlarm | null>(null);
 
   // Persist changes
   useEffect(() => saveMedications(medications), [medications]);
-  useEffect(() => saveAlarms(alarms), [alarms]);
   useEffect(() => saveLogs(logs), [logs]);
   useEffect(() => saveSettings(settings), [settings]);
   useEffect(() => {
@@ -118,10 +111,6 @@ export function App() {
     setShowIosInstallTip((prev) => !prev);
   };
 
-  const handleOneTimeAlarmFired = useCallback((alarmId: string) => {
-    setAlarms((prev) => prev.map((a) => (a.id === alarmId ? { ...a, enabled: false } : a)));
-  }, []);
-
   const {
     now,
     activeRing,
@@ -132,16 +121,14 @@ export function App() {
     triggerTestRing,
   } = useAlarmScheduler({
     medications,
-    alarms,
     logs,
     settings,
-    onOneTimeAlarmFired: handleOneTimeAlarmFired,
   });
 
   const todayKey = toDateKey(now);
   const todayDow = now.getDay();
 
-  // Enable audio on first user interaction anywhere in the app
+  // Unlock audio on first pointer interaction
   useEffect(() => {
     const unlockOnce = async () => {
       const ok = await alarmAudio.unlock();
@@ -157,7 +144,7 @@ export function App() {
   const handleUnlockAndTestAudio = async () => {
     const ok = await alarmAudio.unlock();
     setAudioUnlocked(ok);
-    alarmAudio.preview('temple_chime', settings.defaultVolume);
+    void alarmAudio.preview('temple_chime', settings.defaultVolume);
   };
 
   const handleRequestNotifications = async () => {
@@ -167,7 +154,6 @@ export function App() {
   };
 
   const logAction = (
-    kind: 'medication' | 'alarm',
     itemId: string,
     title: string,
     subtitle: string,
@@ -176,7 +162,6 @@ export function App() {
   ) => {
     const entry: LogEntry = {
       id: createId('log'),
-      kind,
       itemId,
       title,
       subtitle,
@@ -189,7 +174,7 @@ export function App() {
   };
 
   const markMedicationTaken = (med: Medication, scheduledTime: string) => {
-    logAction('medication', med.id, med.name, med.dosage, scheduledTime, 'taken');
+    logAction(med.id, med.name, med.dosage, scheduledTime, 'taken');
     if (med.trackStock) {
       setMedications((prev) =>
         prev.map((m) =>
@@ -201,27 +186,22 @@ export function App() {
     }
   };
 
-  const handleRingTakeOrDismiss = (target: RingingTarget) => {
-    if (target.kind === 'medication') {
-      const med = medications.find((m) => m.id === target.itemId);
-      if (med) {
-        markMedicationTaken(med, target.scheduledTime);
-      }
-    } else {
-      logAction('alarm', target.itemId, target.title, 'Alarm', target.scheduledTime, 'dismissed');
+  const handleRingMarkTaken = (target: RingingTarget) => {
+    const med = medications.find((m) => m.id === target.itemId);
+    if (med) {
+      markMedicationTaken(med, target.scheduledTime);
     }
     dismissCurrentRing();
   };
 
   const handleRingSkipMed = (target: RingingTarget) => {
-    logAction('medication', target.itemId, target.title, target.subtitle, target.scheduledTime, 'skipped');
+    logAction(target.itemId, target.title, target.subtitle, target.scheduledTime, 'skipped');
     dismissCurrentRing();
   };
 
   const handleRingSnooze = (minutes: number) => {
     if (activeRing) {
       logAction(
-        activeRing.kind,
         activeRing.itemId,
         activeRing.title,
         `${activeRing.subtitle} (Snoozed ${minutes}m)`,
@@ -232,38 +212,26 @@ export function App() {
     snoozeCurrentRing(minutes);
   };
 
-  // Today's chronological schedule
+  // Today's chronological medication alarms
   const todaySchedule = useMemo(() => {
-    type ScheduleRow =
-      | {
-          kind: 'medication';
-          key: string;
-          time: string;
-          med: Medication;
-          status: 'pending' | 'taken' | 'skipped';
-        }
-      | {
-          kind: 'alarm';
-          key: string;
-          time: string;
-          alarm: GeneralAlarm;
-        };
-
-    const rows: ScheduleRow[] = [];
+    const rows: {
+      key: string;
+      time: string;
+      med: Medication;
+      status: 'pending' | 'taken' | 'skipped';
+    }[] = [];
 
     for (const med of medications) {
       if (!med.enabled || !med.days.includes(todayDow)) continue;
       for (const t of med.times) {
         const log = logs.find(
           (l) =>
-            l.kind === 'medication' &&
             l.itemId === med.id &&
             l.dateKey === todayKey &&
             l.scheduledTime === t &&
             (l.action === 'taken' || l.action === 'skipped')
         );
         rows.push({
-          kind: 'medication',
           key: `med-${med.id}-${t}`,
           time: t,
           med,
@@ -272,32 +240,18 @@ export function App() {
       }
     }
 
-    for (const alarm of alarms) {
-      if (!alarm.enabled) continue;
-      if (alarm.days.length > 0 && !alarm.days.includes(todayDow)) continue;
-      rows.push({
-        kind: 'alarm',
-        key: `alarm-${alarm.id}-${alarm.time}`,
-        time: alarm.time,
-        alarm,
-      });
-    }
-
     return rows.sort((a, b) => a.time.localeCompare(b.time));
-  }, [medications, alarms, logs, todayDow, todayKey]);
+  }, [medications, logs, todayDow, todayKey]);
 
   const nextUpcoming = useMemo(() => {
-    const candidates: { title: string; time: string; mins: number }[] = [];
-    for (const row of todaySchedule) {
-      if (row.kind === 'medication' && row.status !== 'pending') continue;
-      const mins = minutesUntil(row.time, now);
-      candidates.push({
-        title: row.kind === 'medication' ? row.med.name : row.alarm.label,
+    const candidates = todaySchedule
+      .filter((row) => row.status === 'pending')
+      .map((row) => ({
+        title: row.med.name,
         time: row.time,
-        mins,
-      });
-    }
-    candidates.sort((a, b) => a.mins - b.mins);
+        mins: minutesUntil(row.time, now),
+      }))
+      .sort((a, b) => a.mins - b.mins);
     return candidates[0] ?? null;
   }, [todaySchedule, now]);
 
@@ -307,7 +261,7 @@ export function App() {
   );
 
   const adherenceStats = useMemo(() => {
-    const medLogs = logs.filter((l) => l.kind === 'medication' && (l.action === 'taken' || l.action === 'skipped'));
+    const medLogs = logs.filter((l) => l.action === 'taken' || l.action === 'skipped');
     const taken = medLogs.filter((l) => l.action === 'taken').length;
     const skipped = medLogs.filter((l) => l.action === 'skipped').length;
     const total = taken + skipped;
@@ -328,31 +282,36 @@ export function App() {
 
   const navItems: { id: Tab; label: string; icon: typeof CalendarClock }[] = [
     { id: 'today', label: 'Today', icon: CalendarClock },
-    { id: 'medications', label: 'Meds', icon: Pill },
-    { id: 'alarms', label: 'Alarms', icon: AlarmClock },
+    { id: 'medications', label: 'Medications', icon: Pill },
     { id: 'history', label: 'History', icon: History },
   ];
+
+  const takenTodayCount = todaySchedule.filter((r) => r.status === 'taken').length;
+  const progressPct =
+    todaySchedule.length === 0 ? 0 : Math.round((takenTodayCount / todaySchedule.length) * 100);
 
   return (
     <div className="app-shell">
       <header className="app-header">
         <div className="brand-lockup">
           <div className="brand-mark" style={{ overflow: 'hidden', background: 'transparent' }} aria-hidden="true">
-            <img src="./logo.png" alt="" width={42} height={42} style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover' }} />
+            <img
+              src="./logo.png"
+              alt=""
+              width={42}
+              height={42}
+              style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover' }}
+            />
           </div>
           <div>
             <h1 className="brand-title">MedClock</h1>
-            <p className="brand-subtitle">Medication Reminders &amp; Alarm Clock</p>
+            <p className="brand-subtitle">Medication Reminders &amp; Linked Alarms</p>
           </div>
         </div>
 
         <div className="header-actions">
           {!isStandalone && (
-            <button
-              type="button"
-              className="btn btn--primary btn--sm"
-              onClick={handleInstallApp}
-            >
+            <button type="button" className="btn btn--primary btn--sm" onClick={handleInstallApp}>
               <Download size={16} aria-hidden="true" /> Install App
             </button>
           )}
@@ -369,10 +328,10 @@ export function App() {
           <button
             type="button"
             className="btn btn--secondary btn--sm"
-            onClick={() =>
+            onClick={() => {
+              setAudioUnlocked(true);
               triggerTestRing({
                 key: `test-${Date.now()}`,
-                kind: 'medication',
                 itemId: 'test',
                 title: 'Test Medication Alarm',
                 subtitle: '1 tablet • Sound & Snooze Check',
@@ -380,8 +339,8 @@ export function App() {
                 tone: 'temple_chime',
                 vibrate: true,
                 foodTiming: 'after_food',
-              })
-            }
+              });
+            }}
           >
             <BellRing size={16} aria-hidden="true" /> Test Alarm
           </button>
@@ -397,7 +356,7 @@ export function App() {
             aria-current={tab === id ? 'page' : undefined}
             onClick={() => setTab(id)}
           >
-            <Icon size={18} />
+            <Icon size={18} aria-hidden="true" />
             <span>{label}</span>
           </button>
         ))}
@@ -409,21 +368,27 @@ export function App() {
           {showIosInstallTip && !isStandalone && (
             <div className="banner banner--info" role="status">
               <span>
-                <strong>Install on your device:</strong> On iPhone/iPad Safari tap <strong>Share → Add to Home Screen</strong>. On Chrome/Edge desktop or Android, use the browser menu <strong>Install MedClock</strong>.
+                <strong>Install on your device:</strong> On iPhone/iPad Safari tap{' '}
+                <strong>Share → Add to Home Screen</strong>. On Chrome/Edge desktop or Android, use the
+                browser menu <strong>Install MedClock</strong>.
               </span>
-              <button type="button" className="btn btn--secondary btn--sm" onClick={() => setShowIosInstallTip(false)}>
+              <button
+                type="button"
+                className="btn btn--secondary btn--sm"
+                onClick={() => setShowIosInstallTip(false)}
+              >
                 Got it
               </button>
             </div>
           )}
 
-          <section className="hero-clock-card" aria-label="Live clock and next reminder">
+          <section className="hero-clock-card" aria-label="Live clock and next dose">
             <div>
               <div className="hero-time tabular-nums">{formattedClock}</div>
               <div className="hero-date">{formattedDate}</div>
             </div>
             <div className="hero-next-pill">
-              <div className="hero-next-label">Next Up</div>
+              <div className="hero-next-label">Next Dose Alarm</div>
               {nextUpcoming ? (
                 <div className="hero-next-value">
                   {nextUpcoming.title} •{' '}
@@ -431,35 +396,29 @@ export function App() {
                   {formatCountdown(nextUpcoming.mins)})
                 </div>
               ) : (
-                <div className="hero-next-value">All caught up for today</div>
+                <div className="hero-next-value">All doses completed for today</div>
               )}
             </div>
           </section>
 
-          {(() => {
-            const todayMeds = todaySchedule.filter((r) => r.kind === 'medication');
-            const takenCount = todayMeds.filter((r) => r.status === 'taken').length;
-            if (todayMeds.length === 0) return null;
-            const pct = Math.round((takenCount / todayMeds.length) * 100);
-            return (
-              <section className="progress-card" aria-label="Today's medication progress">
-                <div className="progress-header">
-                  <span>Today&apos;s Medication Progress</span>
-                  <span className="tabular-nums" style={{ color: 'var(--color-brand-secondary)' }}>
-                    {takenCount} / {todayMeds.length} taken ({pct}%)
-                  </span>
-                </div>
-                <div className="progress-track">
-                  <div className="progress-fill" style={{ width: `${pct}%` }} />
-                </div>
-              </section>
-            );
-          })()}
+          {todaySchedule.length > 0 && (
+            <section className="progress-card" aria-label="Today's medication progress">
+              <div className="progress-header">
+                <span>Today&apos;s Medication Progress</span>
+                <span className="tabular-nums" style={{ color: 'var(--color-brand-secondary)' }}>
+                  {takenTodayCount} / {todaySchedule.length} taken ({progressPct}%)
+                </span>
+              </div>
+              <div className="progress-track">
+                <div className="progress-fill" style={{ width: `${progressPct}%` }} />
+              </div>
+            </section>
+          )}
 
           {!audioUnlocked && (
             <div className="banner banner--warning" role="status">
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <Volume2 size={18} />
+                <Volume2 size={18} aria-hidden="true" />
                 <span>Tap once to unlock loud alarm audio in your browser.</span>
               </div>
               <button type="button" className="btn btn--primary btn--sm" onClick={handleUnlockAndTestAudio}>
@@ -471,8 +430,8 @@ export function App() {
           {notifPermission === 'default' && (
             <div className="banner banner--info" role="status">
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <Bell size={18} />
-                <span>Allow browser notifications for background alerts.</span>
+                <Bell size={18} aria-hidden="true" />
+                <span>Allow browser notifications for background medication alerts.</span>
               </div>
               <button type="button" className="btn btn--secondary btn--sm" onClick={handleRequestNotifications}>
                 Allow Notifications
@@ -484,10 +443,12 @@ export function App() {
             <div className="banner banner--warning" role="status">
               <div>
                 <strong>Snoozed ({snoozed.length}):</strong>{' '}
-                {snoozed.map((s) => {
-                  const minsLeft = Math.max(1, Math.ceil((s.wakeAtMs - now.getTime()) / 60000));
-                  return `${s.scheduledTime} (${minsLeft}m left)`;
-                }).join(', ')}
+                {snoozed
+                  .map((s) => {
+                    const minsLeft = Math.max(1, Math.ceil((s.wakeAtMs - now.getTime()) / 60000));
+                    return `${formatTime12h(s.scheduledTime)} (${minsLeft}m left)`;
+                  })
+                  .join(', ')}
               </div>
             </div>
           )}
@@ -495,7 +456,7 @@ export function App() {
           {lowStockMeds.length > 0 && (
             <div className="banner banner--warning" role="alert">
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <AlertTriangle size={18} />
+                <AlertTriangle size={18} aria-hidden="true" />
                 <span>
                   <strong>Refill Needed:</strong>{' '}
                   {lowStockMeds.map((m) => `${m.name} (${m.remainingDoses} left)`).join(', ')}
@@ -512,112 +473,68 @@ export function App() {
           )}
 
           <div className="section-header">
-            <h2 className="section-title">Today&apos;s Schedule</h2>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                type="button"
-                className="btn btn--primary btn--sm"
-                onClick={() => {
-                  setEditingMed(null);
-                  setMedModalOpen(true);
-                }}
-              >
-                <Plus size={16} /> Med
-              </button>
-              <button
-                type="button"
-                className="btn btn--secondary btn--sm"
-                onClick={() => {
-                  setEditingAlarm(null);
-                  setAlarmModalOpen(true);
-                }}
-              >
-                <Plus size={16} /> Alarm
-              </button>
-            </div>
+            <h2 className="section-title">Today&apos;s Medication Alarms</h2>
+            <button
+              type="button"
+              className="btn btn--primary btn--sm"
+              onClick={() => {
+                setEditingMed(null);
+                setMedModalOpen(true);
+              }}
+            >
+              <Plus size={16} aria-hidden="true" /> Add Medicine
+            </button>
           </div>
 
           {todaySchedule.length === 0 ? (
             <div className="card">
               <p style={{ margin: 0, color: 'var(--color-text-secondary)' }}>
-                No medications or alarms scheduled for today. Add one above to get started.
+                No medications scheduled for today. Tap <strong>Add Medicine</strong> above to add a medicine and its alarm times.
               </p>
             </div>
           ) : (
             <div className="stack">
-              {todaySchedule.map((row) => {
-                if (row.kind === 'medication') {
-                  const { med, status, time } = row;
-                  return (
-                    <article
-                      key={row.key}
-                      className={`item-card ${status !== 'pending' ? 'item-card--done' : ''}`}
-                    >
-                      <div className="item-meta">
-                        <div className="item-title-row">
-                          <span className="tabular-nums" style={{ fontWeight: 700, color: 'var(--color-brand-primary)' }}>
-                            {formatTime12h(time)}
-                          </span>
-                          <h3 className="item-title">{med.name}</h3>
-                          <span className="badge badge--gold">{foodTimingLabel(med.foodTiming)}</span>
-                          {status === 'taken' && <span className="badge badge--green">Taken</span>}
-                          {status === 'skipped' && <span className="badge badge--red">Skipped</span>}
-                        </div>
-                        <div className="item-sub">{med.dosage}</div>
-                      </div>
-
-                      {status === 'pending' && (
-                        <div style={{ display: 'flex', gap: 8 }}>
-                          <button
-                            type="button"
-                            className="btn btn--success btn--sm"
-                            onClick={() => markMedicationTaken(med, time)}
-                          >
-                            <Check size={16} /> Take
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn--secondary btn--sm"
-                            onClick={() =>
-                              logAction('medication', med.id, med.name, med.dosage, time, 'skipped')
-                            }
-                          >
-                            Skip
-                          </button>
-                        </div>
-                      )}
-                    </article>
-                  );
-                }
-
-                const { alarm } = row;
-                return (
-                  <article key={row.key} className="item-card item-card--alarm">
-                    <div className="item-meta">
-                      <div className="item-title-row">
-                        <span className="tabular-nums" style={{ fontWeight: 700, color: 'var(--color-alarm-indigo)' }}>
-                          {formatTime12h(alarm.time)}
-                        </span>
-                        <h3 className="item-title">{alarm.label}</h3>
-                        <span className="badge badge--blue">Alarm</span>
-                      </div>
-                      <div className="item-sub">{formatDaysSummary(alarm.days)}</div>
+              {todaySchedule.map(({ key, time, med, status }) => (
+                <article
+                  key={key}
+                  className={`item-card ${status !== 'pending' ? 'item-card--done' : ''}`}
+                >
+                  <div className="item-meta">
+                    <div className="item-title-row">
+                      <span
+                        className="tabular-nums"
+                        style={{ fontWeight: 700, color: 'var(--color-brand-primary)' }}
+                      >
+                        {formatTime12h(time)}
+                      </span>
+                      <h3 className="item-title">{med.name}</h3>
+                      <span className="badge badge--gold">{foodTimingLabel(med.foodTiming)}</span>
+                      {status === 'taken' && <span className="badge badge--green">Taken</span>}
+                      {status === 'skipped' && <span className="badge badge--red">Skipped</span>}
                     </div>
-                    <label className="switch-wrap" aria-label={`Toggle ${alarm.label}`}>
-                      <input
-                        className="switch-input"
-                        type="checkbox"
-                        checked={alarm.enabled}
-                        onChange={() =>
-                          setAlarms((prev) =>
-                            prev.map((a) => (a.id === alarm.id ? { ...a, enabled: !a.enabled } : a))
-                          )
-                        }
-                      />
-                    </label>
-                  </article>
-                );
-              })}
+                    <div className="item-sub">{med.dosage}</div>
+                  </div>
+
+                  {status === 'pending' && (
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button
+                        type="button"
+                        className="btn btn--success btn--sm"
+                        onClick={() => markMedicationTaken(med, time)}
+                      >
+                        <Check size={16} aria-hidden="true" /> Take
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn--secondary btn--sm"
+                        onClick={() => logAction(med.id, med.name, med.dosage, time, 'skipped')}
+                      >
+                        Skip
+                      </button>
+                    </div>
+                  )}
+                </article>
+              ))}
             </div>
           )}
         </main>
@@ -627,7 +544,7 @@ export function App() {
       {tab === 'medications' && (
         <main>
           <div className="section-header">
-            <h2 className="section-title">Medications</h2>
+            <h2 className="section-title">Medications &amp; Alarms</h2>
             <button
               type="button"
               className="btn btn--primary btn--sm"
@@ -636,21 +553,22 @@ export function App() {
                 setMedModalOpen(true);
               }}
             >
-              <Plus size={16} /> Add Medication
+              <Plus size={16} aria-hidden="true" /> Add Medicine
             </button>
           </div>
 
           {medications.length === 0 ? (
             <div className="card">
               <p style={{ margin: 0, color: 'var(--color-text-secondary)' }}>
-                No medications added yet.
+                No medications added yet. Tap <strong>Add Medicine</strong> to set up your medicine and its linked alarm.
               </p>
             </div>
           ) : (
             <div className="stack">
               {medications.map((med) => {
                 const isLow = med.trackStock && med.remainingDoses <= med.refillThreshold;
-                const stockPct = med.totalDoses > 0 ? Math.min(100, (med.remainingDoses / med.totalDoses) * 100) : 0;
+                const stockPct =
+                  med.totalDoses > 0 ? Math.min(100, (med.remainingDoses / med.totalDoses) * 100) : 0;
                 return (
                   <article key={med.id} className={`item-card ${!med.enabled ? 'item-card--dim' : ''}`}>
                     <div className="item-meta">
@@ -682,7 +600,7 @@ export function App() {
                       )}
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                       {med.trackStock && (
                         <button
                           type="button"
@@ -702,9 +620,31 @@ export function App() {
                             )
                           }
                         >
-                          <RefreshCw size={14} /> +30
+                          <RefreshCw size={14} aria-hidden="true" /> +30
                         </button>
                       )}
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        aria-label={`Test alarm for ${med.name}`}
+                        title={`Test alarm for ${med.name}`}
+                        onClick={() => {
+                          setAudioUnlocked(true);
+                          triggerTestRing({
+                            key: `med-test-${med.id}-${Date.now()}`,
+                            itemId: med.id,
+                            title: med.name,
+                            subtitle: med.dosage,
+                            scheduledTime: med.times[0] ?? '08:00',
+                            tone: med.tone,
+                            vibrate: med.vibrate,
+                            foodTiming: med.foodTiming,
+                            notes: med.notes,
+                          });
+                        }}
+                      >
+                        <BellRing size={17} aria-hidden="true" />
+                      </button>
                       <button
                         type="button"
                         className="icon-btn"
@@ -714,7 +654,7 @@ export function App() {
                           setMedModalOpen(true);
                         }}
                       >
-                        <Pencil size={17} />
+                        <Pencil size={17} aria-hidden="true" />
                       </button>
                       <button
                         type="button"
@@ -722,9 +662,9 @@ export function App() {
                         aria-label={`Delete ${med.name}`}
                         onClick={() => setMedications((prev) => prev.filter((m) => m.id !== med.id))}
                       >
-                        <Trash2 size={17} />
+                        <Trash2 size={17} aria-hidden="true" />
                       </button>
-                      <label className="switch-wrap" aria-label={`Enable ${med.name}`}>
+                      <label className="switch-wrap" aria-label={`Enable alarm for ${med.name}`}>
                         <input
                           className="switch-input"
                           type="checkbox"
@@ -745,93 +685,13 @@ export function App() {
         </main>
       )}
 
-      {/* ALARMS TAB */}
-      {tab === 'alarms' && (
-        <main>
-          <div className="section-header">
-            <h2 className="section-title">Alarm Clock</h2>
-            <button
-              type="button"
-              className="btn btn--primary btn--sm"
-              onClick={() => {
-                setEditingAlarm(null);
-                setAlarmModalOpen(true);
-              }}
-            >
-              <Plus size={16} /> New Alarm
-            </button>
-          </div>
-
-          {alarms.length === 0 ? (
-            <div className="card">
-              <p style={{ margin: 0, color: 'var(--color-text-secondary)' }}>
-                No alarms configured. Create a wake-up or custom alarm above.
-              </p>
-            </div>
-          ) : (
-            <div className="stack">
-              {alarms.map((alarm) => (
-                <article key={alarm.id} className={`item-card ${!alarm.enabled ? 'item-card--dim' : ''}`}>
-                  <div className="item-meta">
-                    <div className="item-title-row">
-                      <span
-                        className="tabular-nums"
-                        style={{ fontSize: '1.35rem', fontWeight: 700, color: 'var(--color-brand-primary)' }}
-                      >
-                        {formatTime12h(alarm.time)}
-                      </span>
-                      <h3 className="item-title">{alarm.label}</h3>
-                    </div>
-                    <div className="item-sub">{formatDaysSummary(alarm.days)}</div>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <button
-                      type="button"
-                      className="icon-btn"
-                      aria-label={`Edit ${alarm.label}`}
-                      onClick={() => {
-                        setEditingAlarm(alarm);
-                        setAlarmModalOpen(true);
-                      }}
-                    >
-                      <Pencil size={17} />
-                    </button>
-                    <button
-                      type="button"
-                      className="icon-btn"
-                      aria-label={`Delete ${alarm.label}`}
-                      onClick={() => setAlarms((prev) => prev.filter((a) => a.id !== alarm.id))}
-                    >
-                      <Trash2 size={17} />
-                    </button>
-                    <label className="switch-wrap" aria-label={`Enable ${alarm.label}`}>
-                      <input
-                        className="switch-input"
-                        type="checkbox"
-                        checked={alarm.enabled}
-                        onChange={() =>
-                          setAlarms((prev) =>
-                            prev.map((a) => (a.id === alarm.id ? { ...a, enabled: !a.enabled } : a))
-                          )
-                        }
-                      />
-                    </label>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </main>
-      )}
-
       {/* HISTORY TAB */}
       {tab === 'history' && (
         <main>
           <div className="section-header">
             <h2 className="section-title">Adherence &amp; History</h2>
-            {logs.length > 0 && (
-              confirmClearLog ? (
+            {logs.length > 0 &&
+              (confirmClearLog ? (
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button
                     type="button"
@@ -859,8 +719,7 @@ export function App() {
                 >
                   Clear Log
                 </button>
-              )
-            )}
+              ))}
           </div>
 
           <div className="card" style={{ marginBottom: 14 }}>
@@ -914,7 +773,7 @@ export function App() {
           {logs.length === 0 ? (
             <div className="card">
               <p style={{ margin: 0, color: 'var(--color-text-secondary)' }}>
-                No activity logged yet. Mark a medication as Taken or dismiss an alarm to see history.
+                No activity logged yet. Mark a medication as Taken to see your history.
               </p>
             </div>
           ) : (
@@ -926,7 +785,7 @@ export function App() {
                       <h3 className="item-title">{entry.title}</h3>
                       <span
                         className={`badge ${
-                          entry.action === 'taken' || entry.action === 'dismissed'
+                          entry.action === 'taken'
                             ? 'badge--green'
                             : entry.action === 'snoozed'
                               ? 'badge--gold'
@@ -964,7 +823,7 @@ export function App() {
             aria-current={tab === id ? 'page' : undefined}
             onClick={() => setTab(id)}
           >
-            <Icon size={18} />
+            <Icon size={18} aria-hidden="true" />
             <span>{label}</span>
           </button>
         ))}
@@ -974,7 +833,7 @@ export function App() {
       <RingingModal
         target={activeRing}
         queueCount={ringQueueCount}
-        onTakeOrDismiss={handleRingTakeOrDismiss}
+        onMarkTaken={handleRingMarkTaken}
         onSnooze={handleRingSnooze}
         onSkipMed={handleRingSkipMed}
       />
@@ -987,18 +846,6 @@ export function App() {
           setMedications((prev) => {
             const exists = prev.some((m) => m.id === saved.id);
             return exists ? prev.map((m) => (m.id === saved.id ? saved : m)) : [...prev, saved];
-          });
-        }}
-      />
-
-      <AlarmModal
-        open={alarmModalOpen}
-        editing={editingAlarm}
-        onClose={() => setAlarmModalOpen(false)}
-        onSave={(saved) => {
-          setAlarms((prev) => {
-            const exists = prev.some((a) => a.id === saved.id);
-            return exists ? prev.map((a) => (a.id === saved.id ? saved : a)) : [...prev, saved];
           });
         }}
       />

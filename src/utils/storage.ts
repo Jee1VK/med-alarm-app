@@ -1,8 +1,7 @@
-import type { AppSettings, GeneralAlarm, LogEntry, Medication } from '../types';
+import type { AppSettings, LogEntry, Medication } from '../types';
 
 const KEYS = {
   meds: 'medclock.medications.v1',
-  alarms: 'medclock.alarms.v1',
   logs: 'medclock.logs.v1',
   settings: 'medclock.settings.v1',
   initialized: 'medclock.initialized.v1',
@@ -24,6 +23,7 @@ const SEED_MEDICATIONS: Medication[] = [
     foodTiming: 'after_food',
     notes: 'Take with a full glass of water after breakfast.',
     tone: 'temple_chime',
+    vibrate: true,
     enabled: true,
     trackStock: true,
     remainingDoses: 18,
@@ -40,33 +40,13 @@ const SEED_MEDICATIONS: Medication[] = [
     foodTiming: 'before_food',
     notes: 'Take 15 minutes before meal.',
     tone: 'urgent_pulse',
+    vibrate: true,
     enabled: true,
     trackStock: true,
     remainingDoses: 4,
     totalDoses: 30,
     dosesPerIntake: 1,
     refillThreshold: 5,
-  },
-];
-
-const SEED_ALARMS: GeneralAlarm[] = [
-  {
-    id: 'alarm-seed-1',
-    label: 'Morning Wake-Up',
-    time: '06:30',
-    days: [1, 2, 3, 4, 5],
-    tone: 'classic_bell',
-    vibrate: true,
-    enabled: true,
-  },
-  {
-    id: 'alarm-seed-2',
-    label: 'Evening Walk',
-    time: '18:00',
-    days: [0, 1, 2, 3, 4, 5, 6],
-    tone: 'gentle_dawn',
-    vibrate: true,
-    enabled: false,
   },
 ];
 
@@ -81,7 +61,6 @@ function safeParse<T>(raw: string | null, fallback: T): T {
 
 export function loadInitialData(): {
   medications: Medication[];
-  alarms: GeneralAlarm[];
   logs: LogEntry[];
   settings: AppSettings;
 } {
@@ -89,20 +68,24 @@ export function loadInitialData(): {
   if (!initialized) {
     localStorage.setItem(KEYS.initialized, '1');
     localStorage.setItem(KEYS.meds, JSON.stringify(SEED_MEDICATIONS));
-    localStorage.setItem(KEYS.alarms, JSON.stringify(SEED_ALARMS));
     localStorage.setItem(KEYS.logs, JSON.stringify([]));
     localStorage.setItem(KEYS.settings, JSON.stringify(DEFAULT_SETTINGS));
     return {
       medications: SEED_MEDICATIONS,
-      alarms: SEED_ALARMS,
       logs: [],
       settings: DEFAULT_SETTINGS,
     };
   }
 
+  const rawMeds = safeParse<Medication[]>(localStorage.getItem(KEYS.meds), []);
+  // Ensure backward compatibility for any saved meds missing `vibrate`
+  const medications = rawMeds.map((m) => ({
+    ...m,
+    vibrate: m.vibrate ?? true,
+  }));
+
   return {
-    medications: safeParse<Medication[]>(localStorage.getItem(KEYS.meds), []),
-    alarms: safeParse<GeneralAlarm[]>(localStorage.getItem(KEYS.alarms), []),
+    medications,
     logs: safeParse<LogEntry[]>(localStorage.getItem(KEYS.logs), []),
     settings: {
       ...DEFAULT_SETTINGS,
@@ -113,10 +96,6 @@ export function loadInitialData(): {
 
 export function saveMedications(meds: Medication[]): void {
   localStorage.setItem(KEYS.meds, JSON.stringify(meds));
-}
-
-export function saveAlarms(alarms: GeneralAlarm[]): void {
-  localStorage.setItem(KEYS.alarms, JSON.stringify(alarms));
 }
 
 export function saveLogs(logs: LogEntry[]): void {

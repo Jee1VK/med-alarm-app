@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type {
   AppSettings,
-  GeneralAlarm,
   LogEntry,
   Medication,
   RingingTarget,
@@ -12,10 +11,8 @@ import { toDateKey } from '../utils/time';
 
 interface SchedulerProps {
   medications: Medication[];
-  alarms: GeneralAlarm[];
   logs: LogEntry[];
   settings: AppSettings;
-  onOneTimeAlarmFired: (alarmId: string) => void;
 }
 
 /** Catch-up window (ms) so browser background throttling doesn't skip an alarm. */
@@ -30,10 +27,8 @@ function scheduledTimestampForToday(now: Date, hhmm: string): number {
 
 export function useAlarmScheduler({
   medications,
-  alarms,
   logs,
   settings,
-  onOneTimeAlarmFired,
 }: SchedulerProps) {
   const [now, setNow] = useState<Date>(() => new Date());
   const [ringQueue, setRingQueue] = useState<RingingTarget[]>([]);
@@ -43,12 +38,10 @@ export function useAlarmScheduler({
 
   const activeRing = ringQueue[0] ?? null;
 
-  // Keep ref in sync so tick() can read snoozed items synchronously
   useEffect(() => {
     snoozedRef.current = snoozed;
   }, [snoozed]);
 
-  // Trigger audio & browser notification whenever activeRing changes
   useEffect(() => {
     if (!activeRing) {
       alarmAudio.stop();
@@ -59,12 +52,8 @@ export function useAlarmScheduler({
 
     if ('Notification' in window && Notification.permission === 'granted') {
       try {
-        const body =
-          activeRing.kind === 'medication'
-            ? `${activeRing.subtitle} • Scheduled for ${activeRing.scheduledTime}`
-            : `Alarm • ${activeRing.scheduledTime}`;
         new Notification(activeRing.title, {
-          body,
+          body: `${activeRing.subtitle} • Scheduled for ${activeRing.scheduledTime}`,
           icon: './icon-192.png',
           tag: activeRing.key,
           requireInteraction: true,
@@ -75,7 +64,6 @@ export function useAlarmScheduler({
     }
   }, [activeRing, settings.defaultVolume]);
 
-  // 1-second precision clock + catch-up alarm matcher
   useEffect(() => {
     const tick = () => {
       const current = new Date();
@@ -87,7 +75,7 @@ export function useAlarmScheduler({
 
       const dueTargets: RingingTarget[] = [];
 
-      // 1. Check snoozed items synchronously via snoozedRef
+      // 1. Check snoozed medication alarms synchronously
       if (snoozedRef.current.length > 0) {
         const remaining: SnoozedItem[] = [];
         let changed = false;
@@ -95,39 +83,22 @@ export function useAlarmScheduler({
         for (const item of snoozedRef.current) {
           if (item.wakeAtMs <= nowMs) {
             changed = true;
-            if (item.kind === 'medication') {
-              const med = medications.find((m) => m.id === item.itemId);
-              if (med && med.enabled) {
-                dueTargets.push({
-                  key: item.key,
-                  kind: 'medication',
-                  itemId: med.id,
-                  title: med.name,
-                  subtitle: med.dosage,
-                  scheduledTime: item.scheduledTime,
-                  tone: med.tone,
-                  vibrate: true,
-                  foodTiming: med.foodTiming,
-                  notes: med.notes,
-                  remainingDoses: med.remainingDoses,
-                  refillThreshold: med.refillThreshold,
-                  trackStock: med.trackStock,
-                });
-              }
-            } else {
-              const alarm = alarms.find((a) => a.id === item.itemId);
-              if (alarm) {
-                dueTargets.push({
-                  key: item.key,
-                  kind: 'alarm',
-                  itemId: alarm.id,
-                  title: alarm.label || 'Alarm',
-                  subtitle: 'Snoozed Alarm',
-                  scheduledTime: item.scheduledTime,
-                  tone: alarm.tone,
-                  vibrate: alarm.vibrate,
-                });
-              }
+            const med = medications.find((m) => m.id === item.itemId);
+            if (med && med.enabled) {
+              dueTargets.push({
+                key: item.key,
+                itemId: med.id,
+                title: med.name,
+                subtitle: med.dosage,
+                scheduledTime: item.scheduledTime,
+                tone: med.tone,
+                vibrate: med.vibrate,
+                foodTiming: med.foodTiming,
+                notes: med.notes,
+                remainingDoses: med.remainingDoses,
+                refillThreshold: med.refillThreshold,
+                trackStock: med.trackStock,
+              });
             }
           } else {
             remaining.push(item);
@@ -140,7 +111,7 @@ export function useAlarmScheduler({
         }
       }
 
-      // 2. Check scheduled medications (with 2-minute catch-up window)
+      // 2. Check scheduled medication alarms (with 2-minute catch-up window)
       for (const med of medications) {
         if (!med.enabled) continue;
         if (!med.days.includes(dayOfWeek)) continue;
@@ -155,7 +126,6 @@ export function useAlarmScheduler({
 
           const alreadyLogged = logs.some(
             (l) =>
-              l.kind === 'medication' &&
               l.itemId === med.id &&
               l.dateKey === dateKey &&
               l.scheduledTime === time &&
@@ -166,49 +136,18 @@ export function useAlarmScheduler({
           firedMinuteKeysRef.current.add(minuteKey);
           dueTargets.push({
             key: `medication:${med.id}:${time}`,
-            kind: 'medication',
             itemId: med.id,
             title: med.name,
             subtitle: med.dosage,
             scheduledTime: time,
             tone: med.tone,
-            vibrate: true,
+            vibrate: med.vibrate,
             foodTiming: med.foodTiming,
             notes: med.notes,
             remainingDoses: med.remainingDoses,
             refillThreshold: med.refillThreshold,
             trackStock: med.trackStock,
           });
-        }
-      }
-
-      // 3. Check general alarms (with 2-minute catch-up window)
-      for (const alarm of alarms) {
-        if (!alarm.enabled) continue;
-        const matchesDay = alarm.days.length === 0 || alarm.days.includes(dayOfWeek);
-        if (!matchesDay) continue;
-
-        const schedMs = scheduledTimestampForToday(current, alarm.time);
-        const elapsedMs = nowMs - schedMs;
-        if (elapsedMs < 0 || elapsedMs > CATCH_UP_WINDOW_MS) continue;
-
-        const minuteKey = `alarm:${alarm.id}:${dateKey}:${alarm.time}`;
-        if (firedMinuteKeysRef.current.has(minuteKey)) continue;
-
-        firedMinuteKeysRef.current.add(minuteKey);
-        dueTargets.push({
-          key: `alarm:${alarm.id}:${alarm.time}`,
-          kind: 'alarm',
-          itemId: alarm.id,
-          title: alarm.label || 'Alarm',
-          subtitle: alarm.days.length === 0 ? 'One-time alarm' : 'Repeating alarm',
-          scheduledTime: alarm.time,
-          tone: alarm.tone,
-          vibrate: alarm.vibrate,
-        });
-
-        if (alarm.days.length === 0) {
-          onOneTimeAlarmFired(alarm.id);
         }
       }
 
@@ -232,7 +171,7 @@ export function useAlarmScheduler({
       document.removeEventListener('visibilitychange', onResume);
       window.removeEventListener('focus', onResume);
     };
-  }, [medications, alarms, logs, onOneTimeAlarmFired]);
+  }, [medications, logs]);
 
   const dismissCurrentRing = () => {
     alarmAudio.stop();
@@ -245,7 +184,6 @@ export function useAlarmScheduler({
     const wakeAtMs = Date.now() + minutes * 60 * 1000;
     const nextItem: SnoozedItem = {
       key: activeRing.key,
-      kind: activeRing.kind,
       itemId: activeRing.itemId,
       scheduledTime: activeRing.scheduledTime,
       wakeAtMs,

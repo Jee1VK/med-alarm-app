@@ -6,7 +6,7 @@ import { foodTimingLabel, formatTime12h } from '../utils/time';
 interface RingingModalProps {
   target: RingingTarget | null;
   queueCount: number;
-  onTakeOrDismiss: (target: RingingTarget) => void;
+  onMarkTaken: (target: RingingTarget) => void;
   onSnooze: (minutes: number) => void;
   onSkipMed: (target: RingingTarget) => void;
 }
@@ -14,7 +14,7 @@ interface RingingModalProps {
 export function RingingModal({
   target,
   queueCount,
-  onTakeOrDismiss,
+  onMarkTaken,
   onSnooze,
   onSkipMed,
 }: RingingModalProps) {
@@ -34,10 +34,9 @@ export function RingingModal({
   return (
     <dialog
       ref={dialogRef}
-      className={`ring-dialog ${target?.kind === 'medication' ? 'ring-dialog--med' : ''}`}
+      className="ring-dialog ring-dialog--med"
       aria-labelledby="ring-dialog-title"
       onCancel={(e) => {
-        // Prevent accidental Esc dismissal of an active medication/alarm ring
         e.preventDefault();
       }}
     >
@@ -49,7 +48,7 @@ export function RingingModal({
 
           <div>
             <div className="badge badge--blue">
-              {target.kind === 'medication' ? 'Medication Reminder' : 'Alarm'}
+              Medication Alarm
               {queueCount > 1 ? ` (+${queueCount - 1} waiting)` : ''}
             </div>
             <h2
@@ -68,30 +67,28 @@ export function RingingModal({
             </p>
           </div>
 
-          {target.kind === 'medication' && target.foodTiming && (
-            <div
-              style={{
-                background: 'rgba(255,255,255,0.12)',
-                padding: '10px 14px',
-                borderRadius: '6px',
-                width: '100%',
-                fontSize: '0.92rem',
-              }}
-            >
-              <strong>Instruction:</strong> {foodTimingLabel(target.foodTiming)}
-              {target.notes ? ` — ${target.notes}` : ''}
-            </div>
-          )}
+          <div
+            style={{
+              background: 'rgba(255,255,255,0.12)',
+              padding: '10px 14px',
+              borderRadius: '6px',
+              width: '100%',
+              fontSize: '0.92rem',
+            }}
+          >
+            <strong>Instruction:</strong> {foodTimingLabel(target.foodTiming)}
+            {target.notes ? ` — ${target.notes}` : ''}
+          </div>
 
           <div className="ring-actions">
             <button
               type="button"
               className="ring-btn-take"
               autoFocus
-              onClick={() => onTakeOrDismiss(target)}
+              onClick={() => onMarkTaken(target)}
             >
-              <CheckCircle2 size={20} />
-              {target.kind === 'medication' ? 'Mark Taken' : 'Dismiss Alarm'}
+              <CheckCircle2 size={20} aria-hidden="true" />
+              Mark Taken
             </button>
 
             <div className="ring-btn-snooze-row">
@@ -100,7 +97,7 @@ export function RingingModal({
                 className="ring-btn-ghost"
                 onClick={() => onSnooze(5)}
               >
-                <Clock size={16} style={{ verticalAlign: 'middle', marginRight: 6 }} />
+                <Clock size={16} aria-hidden="true" style={{ verticalAlign: 'middle', marginRight: 6 }} />
                 Snooze 5m
               </button>
               <button
@@ -108,21 +105,19 @@ export function RingingModal({
                 className="ring-btn-ghost"
                 onClick={() => onSnooze(10)}
               >
-                <Clock size={16} style={{ verticalAlign: 'middle', marginRight: 6 }} />
+                <Clock size={16} aria-hidden="true" style={{ verticalAlign: 'middle', marginRight: 6 }} />
                 Snooze 10m
               </button>
             </div>
 
-            {target.kind === 'medication' && (
-              <button
-                type="button"
-                className="ring-btn-ghost"
-                onClick={() => onSkipMed(target)}
-              >
-                <SkipForward size={16} style={{ verticalAlign: 'middle', marginRight: 6 }} />
-                Skip This Dose
-              </button>
-            )}
+            <button
+              type="button"
+              className="ring-btn-ghost"
+              onClick={() => onSkipMed(target)}
+            >
+              <SkipForward size={16} aria-hidden="true" style={{ verticalAlign: 'middle', marginRight: 6 }} />
+              Skip This Dose
+            </button>
           </div>
         </div>
       )}

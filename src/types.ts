@@ -11,6 +11,7 @@ export interface Medication {
   foodTiming: FoodTiming;
   notes?: string;
   tone: AlarmTone;
+  vibrate: boolean;
   enabled: boolean;
   // Refill tracking
   trackStock: boolean;
@@ -20,21 +21,10 @@ export interface Medication {
   refillThreshold: number;
 }
 
-export interface GeneralAlarm {
-  id: string;
-  label: string;
-  time: string; // HH:MM
-  days: number[]; // empty = one-time, or 0..6
-  tone: AlarmTone;
-  vibrate: boolean;
-  enabled: boolean;
-}
-
-export type DoseAction = 'taken' | 'skipped' | 'snoozed' | 'dismissed';
+export type DoseAction = 'taken' | 'skipped' | 'snoozed';
 
 export interface LogEntry {
   id: string;
-  kind: 'medication' | 'alarm';
   itemId: string;
   title: string;
   subtitle: string;
@@ -45,8 +35,7 @@ export interface LogEntry {
 }
 
 export interface SnoozedItem {
-  key: string; // `${kind}:${itemId}:${scheduledTime}`
-  kind: 'medication' | 'alarm';
+  key: string; // `medication:${itemId}:${scheduledTime}`
   itemId: string;
   scheduledTime: string;
   wakeAtMs: number;
@@ -54,14 +43,13 @@ export interface SnoozedItem {
 
 export interface RingingTarget {
   key: string;
-  kind: 'medication' | 'alarm';
   itemId: string;
   title: string;
   subtitle: string;
   scheduledTime: string;
   tone: AlarmTone;
   vibrate: boolean;
-  foodTiming?: FoodTiming;
+  foodTiming: FoodTiming;
   notes?: string;
   remainingDoses?: number;
   refillThreshold?: number;
