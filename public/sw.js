@@ -1,4 +1,4 @@
-const CACHE_NAME = 'medclock-v3';
+const CACHE_NAME = 'medclock-v4';
 const ASSETS = [
   './',
   './index.html',
@@ -26,6 +26,24 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+
+  // Network-first for HTML navigations so users always get the latest deployed fixes
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
+        .then((res) => {
+          if (res && res.status === 200 && res.type === 'basic') {
+            const copy = res.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+          }
+          return res;
+        })
+        .catch(() => caches.match('./index.html') || caches.match(event.request))
+    );
+    return;
+  }
+
+  // Cache-first with background revalidation for static assets
   event.respondWith(
     caches.match(event.request).then((cached) => {
       const networked = fetch(event.request)

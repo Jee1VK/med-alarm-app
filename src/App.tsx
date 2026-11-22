@@ -1316,6 +1316,9 @@ export function App() {
         editing={editingMed}
         onClose={() => setMedModalOpen(false)}
         onSave={(saved) => {
+          void alarmAudio.unlock().then((ok) => {
+            if (ok) setAudioUnlocked(true);
+          });
           setMedications((prev) => {
             const exists = prev.some((m) => m.id === saved.id);
             return exists ? prev.map((m) => (m.id === saved.id ? saved : m)) : [...prev, saved];

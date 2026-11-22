@@ -1,137 +1,229 @@
 import type { AlarmTone } from '../types';
 
 /**
- * Web Audio API synthesizer for loud, persistent, zero-dependency alarms.
- * Plays distinct melodic/pulse patterns and loops until explicitly stopped.
+ * Dual-layer Alarm Audio Engine (Generated PCM WAV <audio loop> + Web Audio API).
+ * - Never hangs on suspended AudioContext.resume() outside user gestures.
+ * - Unlocks both <audio> and AudioContext on first user interaction.
+ * - Works 100% offline with zero external sound files.
  */
-class AlarmAudioEngine {
-  private ctx: AudioContext | null = null;
-  private loopTimer: number | null = null;
-  private activeNodes: Set<AudioNode> = new Set();
-  private isPlaying = false;
-  private vibrateTimer: number | null = null;
 
-  private getOrCreateContext(): AudioContext {
-    if (!this.ctx) {
-      const AudioCtx =
-        window.AudioContext ||
-        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      this.ctx = new AudioCtx();
-    }
-    return this.ctx;
-  }
+function createWavBlobUrl(tone: AlarmTone): string {
+  const sampleRate = 22050;
+  const durationSec = 1.6;
+  const numSamples = Math.floor(sampleRate * durationSec);
+  const buffer = new ArrayBuffer(44 + numSamples * 2);
+  const view = new DataView(buffer);
 
-  private async ensureContextRunning(): Promise<AudioContext> {
-    const ctx = this.getOrCreateContext();
-    if (ctx.state === 'suspended') {
-      try {
-        await ctx.resume();
-      } catch {
-        // Browser may block resume outside user gesture
+  const writeStr = (offset: number, s: string) => {
+    for (let i = 0; i < s.length; i++) view.setUint8(offset + i, s.charCodeAt(i));
+  };
+
+  writeStr(0, 'RIFF');
+  view.setUint32(4, 36 + numSamples * 2, true);
+  writeStr(8, 'WAVE');
+  writeStr(12, 'fmt ');
+  view.setUint32(16, 16, true); // PCM chunk size
+  view.setUint16(20, 1, true); // PCM format
+  view.setUint16(22, 1, true); // Mono
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeStr(36, 'data');
+  view.setUint32(40, numSamples * 2, true);
+
+  const notes: { freq: number; start: number; dur: number; amp: number }[] =
+    tone === 'classic_bell'
+      ? [
+          { freq: 880, start: 0.0, dur: 0.14, amp: 0.65 },
+          { freq: 880, start: 0.18, dur: 0.14, amp: 0.65 },
+          { freq: 880, start: 0.36, dur: 0.14, amp: 0.65 },
+          { freq: 880, start: 0.72, dur: 0.14, amp: 0.65 },
+          { freq: 880, start: 0.9, dur: 0.14, amp: 0.65 },
+        ]
+      : tone === 'urgent_pulse'
+        ? [
+            { freq: 987.77, start: 0.0, dur: 0.18, amp: 0.7 },
+            { freq: 1318.51, start: 0.22, dur: 0.18, amp: 0.75 },
+            { freq: 987.77, start: 0.44, dur: 0.18, amp: 0.7 },
+            { freq: 1318.51, start: 0.66, dur: 0.28, amp: 0.75 },
+          ]
+        : tone === 'gentle_dawn'
+          ? [
+              { freq: 392.0, start: 0.0, dur: 0.45, amp: 0.55 },
+              { freq: 493.88, start: 0.25, dur: 0.45, amp: 0.55 },
+              { freq: 587.33, start: 0.5, dur: 0.65, amp: 0.6 },
+            ]
+          : [
+              // temple_chime
+              { freq: 523.25, start: 0.0, dur: 0.55, amp: 0.65 },
+              { freq: 783.99, start: 0.16, dur: 0.55, amp: 0.6 },
+              { freq: 1046.5, start: 0.34, dur: 0.75, amp: 0.65 },
+            ];
+
+  for (let i = 0; i < numSamples; i++) {
+    const t = i / sampleRate;
+    let sample = 0;
+    for (const n of notes) {
+      if (t >= n.start && t <= n.start + n.dur) {
+        const localT = t - n.start;
+        const attack = Math.min(1, localT / 0.015);
+        const decay = Math.exp(-3.2 * (localT / n.dur));
+        const wave =
+          tone === 'classic_bell' || tone === 'urgent_pulse'
+            ? Math.sin(2 * Math.PI * n.freq * localT) + 0.3 * Math.sin(6 * Math.PI * n.freq * localT)
+            : Math.sin(2 * Math.PI * n.freq * localT);
+        sample += wave * n.amp * attack * decay;
       }
     }
-    return ctx;
+    const clamped = Math.max(-1, Math.min(1, sample));
+    view.setInt16(44 + i * 2, Math.floor(clamped * 32767), true);
   }
 
-  /** Must be called from a user gesture so browser autoplay policy unlocks audio. */
-  async unlock(): Promise<boolean> {
+  return URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
+}
+
+class AlarmAudioEngine {
+  private ctx: AudioContext | null = null;
+  private audioEl: HTMLAudioElement | null = null;
+  private wavUrls: Partial<Record<AlarmTone, string>> = {};
+  private loopTimer: number | null = null;
+  private vibrateTimer: number | null = null;
+  private isPlaying = false;
+
+  private getWavUrl(tone: AlarmTone): string {
+    if (!this.wavUrls[tone]) {
+      this.wavUrls[tone] = createWavBlobUrl(tone);
+    }
+    return this.wavUrls[tone]!;
+  }
+
+  private getAudioElement(): HTMLAudioElement {
+    if (!this.audioEl) {
+      this.audioEl = new Audio();
+      this.audioEl.preload = 'auto';
+    }
+    return this.audioEl;
+  }
+
+  private getContext(): AudioContext | null {
     try {
-      const ctx = await this.ensureContextRunning();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      gain.gain.value = 0.0001;
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.01);
-      return ctx.state === 'running';
+      if (!this.ctx) {
+        const AudioCtx =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        if (AudioCtx) this.ctx = new AudioCtx();
+      }
+      return this.ctx;
     } catch {
-      return false;
+      return null;
     }
   }
 
-  getState(): AudioContextState | 'uninitialized' {
-    return this.ctx ? this.ctx.state : 'uninitialized';
+  /** Call from any user gesture (click/tap) to unlock both Web Audio & <audio>. */
+  async unlock(): Promise<boolean> {
+    let unlocked = false;
+
+    // 1. Unlock Web Audio Context
+    const ctx = this.getContext();
+    if (ctx) {
+      if (ctx.state === 'suspended') {
+        void ctx.resume().catch(() => {});
+      }
+      try {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        gain.gain.value = 0.0001;
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.01);
+        unlocked = true;
+      } catch {
+        // Ignore
+      }
+    }
+
+    // 2. Unlock HTMLAudioElement with a silent play/pause
+    try {
+      const el = this.getAudioElement();
+      if (!el.src) {
+        el.src = this.getWavUrl('temple_chime');
+      }
+      el.muted = true;
+      await el.play();
+      el.pause();
+      el.currentTime = 0;
+      el.muted = false;
+      unlocked = true;
+    } catch {
+      // Ignore if autoplay still restricted
+    }
+
+    return unlocked;
   }
 
-  private playToneBurst(ctx: AudioContext, tone: AlarmTone, volume: number): void {
+  private playWebAudioBurst(tone: AlarmTone, volume: number): void {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    if (ctx.state === 'suspended') {
+      void ctx.resume().catch(() => {});
+    }
+    if (ctx.state !== 'running') return;
+
     const now = ctx.currentTime;
     const vol = Math.max(0.1, Math.min(1, volume));
+    const freqs =
+      tone === 'classic_bell'
+        ? [880, 880, 880]
+        : tone === 'urgent_pulse'
+          ? [987.77, 1318.51, 987.77]
+          : tone === 'gentle_dawn'
+            ? [392, 493.88, 587.33]
+            : [523.25, 783.99, 1046.5];
 
-    const scheduleNote = (
-      freq: number,
-      startOffset: number,
-      duration: number,
-      type: OscillatorType,
-      peakGain: number
-    ) => {
+    freqs.forEach((freq, idx) => {
+      const start = now + idx * 0.2;
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
-      osc.type = type;
-      osc.frequency.setValueAtTime(freq, now + startOffset);
-
-      gain.gain.setValueAtTime(0.001, now + startOffset);
-      gain.gain.exponentialRampToValueAtTime(peakGain * vol, now + startOffset + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + startOffset + duration);
-
+      osc.type = tone === 'classic_bell' ? 'square' : 'triangle';
+      osc.frequency.setValueAtTime(freq, start);
+      gain.gain.setValueAtTime(0.001, start);
+      gain.gain.exponentialRampToValueAtTime(0.45 * vol, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.35);
       osc.connect(gain);
       gain.connect(ctx.destination);
-
-      this.activeNodes.add(osc);
-      this.activeNodes.add(gain);
-      osc.onended = () => {
-        this.activeNodes.delete(osc);
-        this.activeNodes.delete(gain);
-        try {
-          osc.disconnect();
-          gain.disconnect();
-        } catch {
-          // Ignore already disconnected
-        }
-      };
-
-      osc.start(now + startOffset);
-      osc.stop(now + startOffset + duration + 0.02);
-    };
-
-    switch (tone) {
-      case 'temple_chime':
-        scheduleNote(523.25, 0.0, 0.55, 'triangle', 0.7);
-        scheduleNote(783.99, 0.16, 0.55, 'triangle', 0.65);
-        scheduleNote(1046.5, 0.34, 0.75, 'sine', 0.7);
-        break;
-      case 'classic_bell':
-        scheduleNote(880, 0.0, 0.14, 'square', 0.45);
-        scheduleNote(880, 0.18, 0.14, 'square', 0.45);
-        scheduleNote(880, 0.36, 0.14, 'square', 0.45);
-        scheduleNote(880, 0.72, 0.14, 'square', 0.45);
-        scheduleNote(880, 0.9, 0.14, 'square', 0.45);
-        break;
-      case 'urgent_pulse':
-        scheduleNote(987.77, 0.0, 0.18, 'sawtooth', 0.45);
-        scheduleNote(1318.51, 0.22, 0.18, 'sawtooth', 0.5);
-        scheduleNote(987.77, 0.44, 0.18, 'sawtooth', 0.45);
-        scheduleNote(1318.51, 0.66, 0.28, 'sawtooth', 0.5);
-        break;
-      case 'gentle_dawn':
-        scheduleNote(392.0, 0.0, 0.45, 'sine', 0.55);
-        scheduleNote(493.88, 0.25, 0.45, 'sine', 0.55);
-        scheduleNote(587.33, 0.5, 0.65, 'sine', 0.6);
-        break;
-    }
+      osc.start(start);
+      osc.stop(start + 0.38);
+    });
   }
 
   /** Preview a tone once (non-looping). */
-  async preview(tone: AlarmTone, volume = 0.8): Promise<void> {
+  preview(tone: AlarmTone, volume = 0.85): void {
     this.stop();
-    const ctx = await this.ensureContextRunning();
-    this.playToneBurst(ctx, tone, volume);
+    try {
+      const el = this.getAudioElement();
+      el.loop = false;
+      el.muted = false;
+      el.volume = Math.max(0.1, Math.min(1, volume));
+      el.src = this.getWavUrl(tone);
+      el.currentTime = 0;
+      void el.play().catch(() => {
+        this.playWebAudioBurst(tone, volume);
+      });
+    } catch {
+      this.playWebAudioBurst(tone, volume);
+    }
   }
 
   /** Play a short, pleasant 2-note chime when a dose is marked Taken. */
-  async playSuccessChime(volume = 0.7): Promise<void> {
+  playSuccessChime(volume = 0.7): void {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    if (ctx.state === 'suspended') {
+      void ctx.resume().catch(() => {});
+    }
     try {
-      const ctx = await this.ensureContextRunning();
       const now = ctx.currentTime;
       const vol = Math.max(0.1, Math.min(1, volume)) * 0.45;
       const notes = [
@@ -152,28 +244,42 @@ class AlarmAudioEngine {
         osc.stop(now + n.offset + n.dur + 0.02);
       }
     } catch {
-      // Ignore audio errors if not yet unlocked
+      // Ignore
     }
   }
 
-  /** Start persistent looping alarm + optional vibration until stop() is called. */
-  async startLoop(tone: AlarmTone, volume = 0.9, vibrate = true): Promise<void> {
+  /**
+   * Start persistent looping alarm + optional vibration until stop() is called.
+   * Non-blocking: starts immediately without awaiting suspended AudioContext.
+   */
+  startLoop(tone: AlarmTone, volume = 0.9, vibrate = true): void {
     this.stop();
     this.isPlaying = true;
+    const vol = Math.max(0.1, Math.min(1, volume));
 
-    const ctx = await this.ensureContextRunning();
-    if (!this.isPlaying) return;
-
-    const trigger = () => {
-      if (!this.isPlaying) return;
-      if (ctx.state === 'suspended') {
-        void ctx.resume();
-      }
-      this.playToneBurst(ctx, tone, volume);
-    };
-
-    trigger();
-    this.loopTimer = window.setInterval(trigger, 1600);
+    // Primary: real looping WAV <audio> element (most reliable on mobile & desktop)
+    try {
+      const el = this.getAudioElement();
+      el.loop = true;
+      el.muted = false;
+      el.volume = vol;
+      el.src = this.getWavUrl(tone);
+      el.currentTime = 0;
+      void el.play().catch(() => {
+        // Fallback to Web Audio loop if <audio>.play() was blocked
+        if (this.isPlaying) {
+          this.playWebAudioBurst(tone, vol);
+          this.loopTimer = window.setInterval(() => {
+            if (this.isPlaying) this.playWebAudioBurst(tone, vol);
+          }, 1600);
+        }
+      });
+    } catch {
+      this.playWebAudioBurst(tone, vol);
+      this.loopTimer = window.setInterval(() => {
+        if (this.isPlaying) this.playWebAudioBurst(tone, vol);
+      }, 1600);
+    }
 
     if (vibrate && 'vibrate' in navigator) {
       navigator.vibrate([400, 200, 400, 600]);
@@ -187,6 +293,14 @@ class AlarmAudioEngine {
 
   stop(): void {
     this.isPlaying = false;
+    if (this.audioEl) {
+      try {
+        this.audioEl.pause();
+        this.audioEl.currentTime = 0;
+      } catch {
+        // Ignore
+      }
+    }
     if (this.loopTimer !== null) {
       clearInterval(this.loopTimer);
       this.loopTimer = null;
@@ -198,14 +312,6 @@ class AlarmAudioEngine {
     if ('vibrate' in navigator) {
       navigator.vibrate(0);
     }
-    for (const node of this.activeNodes) {
-      try {
-        node.disconnect();
-      } catch {
-        // Ignore already-stopped nodes
-      }
-    }
-    this.activeNodes.clear();
   }
 }
 
