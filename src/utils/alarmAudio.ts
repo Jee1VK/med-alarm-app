@@ -128,6 +128,34 @@ class AlarmAudioEngine {
     this.playToneBurst(ctx, tone, volume);
   }
 
+  /** Play a short, pleasant 2-note chime when a dose is marked Taken. */
+  async playSuccessChime(volume = 0.7): Promise<void> {
+    try {
+      const ctx = await this.ensureContextRunning();
+      const now = ctx.currentTime;
+      const vol = Math.max(0.1, Math.min(1, volume)) * 0.45;
+      const notes = [
+        { freq: 523.25, offset: 0.0, dur: 0.22 },
+        { freq: 783.99, offset: 0.11, dur: 0.35 },
+      ];
+      for (const n of notes) {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(n.freq, now + n.offset);
+        gain.gain.setValueAtTime(0.001, now + n.offset);
+        gain.gain.exponentialRampToValueAtTime(vol, now + n.offset + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + n.offset + n.dur);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now + n.offset);
+        osc.stop(now + n.offset + n.dur + 0.02);
+      }
+    } catch {
+      // Ignore audio errors if not yet unlocked
+    }
+  }
+
   /** Start persistent looping alarm + optional vibration until stop() is called. */
   async startLoop(tone: AlarmTone, volume = 0.9, vibrate = true): Promise<void> {
     this.stop();

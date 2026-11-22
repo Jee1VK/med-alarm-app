@@ -1,12 +1,14 @@
 import { type ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
+  Award,
   Bell,
   BellRing,
   CalendarClock,
   Check,
   Download,
   FileSpreadsheet,
+  Flame,
   History,
   Moon,
   Pencil,
@@ -14,6 +16,7 @@ import {
   Plus,
   RefreshCw,
   RotateCcw,
+  Sparkles,
   Sun,
   Trash2,
   Upload,
@@ -25,6 +28,7 @@ import { useAlarmScheduler } from './hooks/useAlarmScheduler';
 import type { AppSettings, LogEntry, Medication, RingingTarget } from './types';
 import { alarmAudio } from './utils/alarmAudio';
 import { exportBackupJson, exportHistoryCsv, parseBackupJson } from './utils/exportData';
+import { ENCOURAGING_MESSAGES, computeStreak, getEarnedBadges } from './utils/gamification';
 import {
   SAMPLE_MEDICATIONS,
   createId,
@@ -83,6 +87,8 @@ export function App() {
   const [medModalOpen, setMedModalOpen] = useState(false);
   const [editingMed, setEditingMed] = useState<Medication | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [showConfetti, setShowConfetti] = useState(false);
 
   useEffect(() => saveMedications(medications), [medications]);
   useEffect(() => saveLogs(logs), [logs]);
@@ -198,6 +204,23 @@ export function App() {
             : m
         )
       );
+    }
+
+    if (settings.playSuccessChime !== false) {
+      void alarmAudio.playSuccessChime(settings.defaultVolume);
+    }
+
+    const pendingCount = todaySchedule.filter((r) => r.status === 'pending').length;
+    const completedAllToday = !isExtra && pendingCount === 1;
+    const msg = completedAllToday
+      ? 'All doses done for today — nice job!'
+      : ENCOURAGING_MESSAGES[Math.floor(Math.random() * ENCOURAGING_MESSAGES.length)];
+    setToastMsg(msg);
+    window.setTimeout(() => setToastMsg((curr) => (curr === msg ? null : curr)), 3600);
+
+    if (completedAllToday) {
+      setShowConfetti(true);
+      window.setTimeout(() => setShowConfetti(false), 2000);
     }
   };
 
@@ -392,8 +415,30 @@ export function App() {
   const progressPct =
     todaySchedule.length === 0 ? 0 : Math.round((takenTodayCount / todaySchedule.length) * 100);
 
+  const currentStreak = useMemo(() => computeStreak(logs, now), [logs, now]);
+  const milestoneBadges = useMemo(() => getEarnedBadges(logs, currentStreak), [logs, currentStreak]);
+
+  const ringRadius = 21;
+  const ringCircumference = 2 * Math.PI * ringRadius;
+  const ringOffset = ringCircumference - (progressPct / 100) * ringCircumference;
+
   return (
     <div className="app-shell">
+      {showConfetti && (
+        <div className="celebration-burst" aria-hidden="true">
+          {Array.from({ length: 18 }).map((_, i) => (
+            <span
+              key={i}
+              className="confetti-piece"
+              style={{
+                left: `${5 + ((i * 5.2) % 90)}%`,
+                background: ['#0284C7', '#059669', '#D97706', '#E11D48', '#4F46E5'][i % 5],
+                animationDelay: `${(i % 5) * 80}ms`,
+              }}
+            />
+          ))}
+        </div>
+      )}
       <header className="app-header">
         <div className="brand-lockup">
           <div className="brand-mark" style={{ overflow: 'hidden', background: 'transparent' }} aria-hidden="true">
@@ -510,16 +555,53 @@ export function App() {
             </div>
           </section>
 
+          {toastMsg && (
+            <div className="toast-banner" role="status">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Sparkles size={18} aria-hidden="true" />
+                <span>{toastMsg}</span>
+              </div>
+              <button
+                type="button"
+                className="btn btn--secondary btn--sm"
+                onClick={() => setToastMsg(null)}
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
           {todaySchedule.length > 0 && (
             <section className="progress-card" aria-label="Today's medication progress">
-              <div className="progress-header">
-                <span>Today&apos;s Medication Progress</span>
-                <span className="tabular-nums" style={{ color: 'var(--color-brand-secondary)' }}>
-                  {takenTodayCount} / {todaySchedule.length} taken ({progressPct}%)
-                </span>
-              </div>
-              <div className="progress-track">
-                <div className="progress-fill" style={{ width: `${progressPct}%` }} />
+              <div className="progress-ring-row">
+                <svg className="progress-ring" viewBox="0 0 52 52" aria-hidden="true">
+                  <circle className="progress-ring__track" cx="26" cy="26" r={ringRadius} />
+                  <circle
+                    className="progress-ring__fill"
+                    cx="26"
+                    cy="26"
+                    r={ringRadius}
+                    strokeDasharray={ringCircumference}
+                    strokeDashoffset={ringOffset}
+                  />
+                </svg>
+                <div style={{ flex: 1 }}>
+                  <div className="progress-header">
+                    <span>Today&apos;s Medication Progress</span>
+                    {currentStreak > 0 && (
+                      <span className="streak-pill">
+                        <Flame size={14} aria-hidden="true" />
+                        <span className="tabular-nums">{currentStreak}</span>-day streak
+                      </span>
+                    )}
+                  </div>
+                  <div
+                    className="tabular-nums"
+                    style={{ fontSize: '0.88rem', color: 'var(--color-brand-secondary)', fontWeight: 600, marginTop: 2 }}
+                  >
+                    {takenTodayCount} / {todaySchedule.length} taken ({progressPct}%)
+                  </div>
+                </div>
               </div>
             </section>
           )}
@@ -1011,6 +1093,21 @@ export function App() {
                 </div>
               ))}
             </div>
+
+            <div className="badges-grid" aria-label="Milestone badges">
+              {milestoneBadges.map((b) => (
+                <div
+                  key={b.id}
+                  className={`milestone-card ${b.unlocked ? 'milestone-card--unlocked' : ''}`}
+                >
+                  <Award size={20} aria-hidden="true" />
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: '0.88rem' }}>{b.title}</div>
+                    <div style={{ fontSize: '0.78rem' }}>{b.description}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="card" style={{ marginBottom: 14 }}>
@@ -1034,6 +1131,18 @@ export function App() {
                   setSettings((prev) => ({ ...prev, defaultVolume: Number(e.target.value) }))
                 }
               />
+
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', minHeight: 44 }}>
+                <input
+                  type="checkbox"
+                  checked={settings.playSuccessChime !== false}
+                  onChange={(e) =>
+                    setSettings((prev) => ({ ...prev, playSuccessChime: e.target.checked }))
+                  }
+                  style={{ width: 20, height: 20 }}
+                />
+                <span className="field-label">Play victory chime when marking a dose taken</span>
+              </label>
 
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, paddingTop: 6, borderTop: '1px solid var(--color-border-subtle)' }}>
                 <button
