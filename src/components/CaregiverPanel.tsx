@@ -120,16 +120,16 @@ export function CaregiverPanel({
     const snap = buildCaregiverSnapshot(shareConfig, medications, logs, now);
     const res = await pushCaregiverSnapshot(shareConfig, snap);
     if (res.ok) {
-      onUpdateShareConfig({ ...shareConfig, lastSyncedAt: new Date().toISOString() });
-      setShareStatus('Synced live to cloud relay.');
+      onUpdateShareConfig({ ...shareConfig, enabled: true, lastSyncedAt: new Date().toISOString() });
+      setShareStatus('Synced live! Future dose updates will sync automatically.');
     } else {
       setShareStatus(`Sync failed: ${res.error}`);
     }
   };
 
   const handleConnect = async () => {
-    const cleanCode = connectCode.trim().toUpperCase();
-    if (cleanCode.length < 4) {
+    const cleanCode = connectCode.replace(/\s+/g, '').toUpperCase();
+    if (!/^[A-Z0-9]{6}$/.test(cleanCode)) {
       setWatchStatus('Enter a valid 6-character Caregiver Code.');
       return;
     }

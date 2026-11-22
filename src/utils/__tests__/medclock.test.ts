@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { LogEntry, Medication } from '../../types';
+import { buildCaregiverSnapshot, generateCaregiverCode, hashPin } from '../caregiverSync';
 import { buildHistoryCsv, parseBackupJson } from '../exportData';
 import { computeStreak, getEarnedBadges } from '../gamification';
 import {
@@ -141,5 +142,34 @@ describe('backup & CSV security', () => {
     ]);
     expect(csv).toContain("'=CMD|calc");
     expect(csv).toContain("'+500mg");
+  });
+});
+
+describe('caregiver sync utilities', () => {
+  it('generates 6-character unambiguous uppercase codes and deterministic PIN hashes', async () => {
+    const code = generateCaregiverCode(6);
+    expect(code).toMatch(/^[A-HJ-NP-Z2-9]{6}$/);
+    const h1 = await hashPin('1234');
+    const h2 = await hashPin(' 1234 ');
+    expect(h1).toBe(h2);
+    expect(h1).toHaveLength(64);
+    expect(await hashPin('')).toBe('');
+  });
+
+  it('strips local photo flags when building caregiver snapshots', () => {
+    const snap = buildCaregiverSnapshot(
+      {
+        enabled: true,
+        code: 'K7M9P2',
+        writeSecret: 'secret',
+        patientLabel: 'Dad',
+        syncServerUrl: 'https://example.workers.dev',
+      },
+      [{ ...baseMed, hasTabletPhoto: true, hasPrescriptionPhoto: true }],
+      []
+    );
+    expect(snap.patientLabel).toBe('Dad');
+    expect(snap.medications[0].hasTabletPhoto).toBe(false);
+    expect(snap.medications[0].hasPrescriptionPhoto).toBe(false);
   });
 });

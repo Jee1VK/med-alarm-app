@@ -80,7 +80,11 @@ export function RingingModal({
 
           <div>
             <div className="badge badge--blue">
-              {target.isTest ? 'Test Medication Alarm' : 'Medication Alarm'}
+              {target.isTest
+                ? 'Test Medication Alarm'
+                : target.itemId.startsWith('cg:')
+                  ? 'Caregiver Alert'
+                  : 'Medication Alarm'}
               {queueCount > 1 ? ` (+${queueCount - 1} waiting)` : ''}
             </div>
             <h2
@@ -121,7 +125,11 @@ export function RingingModal({
               onClick={() => onMarkTaken(target)}
             >
               <CheckCircle2 size={20} aria-hidden="true" />
-              {target.isTest ? 'Stop Test Alarm' : 'Mark Taken'}
+              {target.isTest
+                ? 'Stop Test Alarm'
+                : target.itemId.startsWith('cg:')
+                  ? 'Dismiss Alert'
+                  : 'Mark Taken'}
             </button>
 
             {!target.isTest && (
@@ -145,14 +153,16 @@ export function RingingModal({
                   </button>
                 </div>
 
-                <button
-                  type="button"
-                  className="ring-btn-ghost"
-                  onClick={() => onSkipMed(target)}
-                >
-                  <SkipForward size={16} aria-hidden="true" style={{ verticalAlign: 'middle', marginRight: 6 }} />
-                  Skip This Dose
-                </button>
+                {!target.itemId.startsWith('cg:') && (
+                  <button
+                    type="button"
+                    className="ring-btn-ghost"
+                    onClick={() => onSkipMed(target)}
+                  >
+                    <SkipForward size={16} aria-hidden="true" style={{ verticalAlign: 'middle', marginRight: 6 }} />
+                    Skip This Dose
+                  </button>
+                )}
               </>
             )}
           </div>

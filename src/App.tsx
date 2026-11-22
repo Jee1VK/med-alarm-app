@@ -399,7 +399,8 @@ export function App() {
   };
 
   const handleRingMarkTaken = (target: RingingTarget) => {
-    if (!target.isTest) {
+    const isCaregiverAlert = target.itemId.startsWith('cg:');
+    if (!target.isTest && !isCaregiverAlert) {
       const med = medications.find((m) => m.id === target.itemId);
       if (med) {
         markMedicationTaken(med, target.scheduledTime);
@@ -409,7 +410,8 @@ export function App() {
   };
 
   const handleRingSkipMed = (target: RingingTarget) => {
-    if (!target.isTest) {
+    const isCaregiverAlert = target.itemId.startsWith('cg:');
+    if (!target.isTest && !isCaregiverAlert) {
       logAction(target.itemId, target.title, target.subtitle, target.scheduledTime, 'skipped');
     }
     dismissCurrentRing();
@@ -418,13 +420,15 @@ export function App() {
   const handleRingSnooze = (minutes: number) => {
     if (activeRing) {
       void scheduleNativeSnooze(activeRing, minutes);
-      logAction(
-        activeRing.itemId,
-        activeRing.title,
-        `${activeRing.subtitle} (Snoozed ${minutes}m)`,
-        activeRing.scheduledTime,
-        'snoozed'
-      );
+      if (!activeRing.isTest && !activeRing.itemId.startsWith('cg:')) {
+        logAction(
+          activeRing.itemId,
+          activeRing.title,
+          `${activeRing.subtitle} (Snoozed ${minutes}m)`,
+          activeRing.scheduledTime,
+          'snoozed'
+        );
+      }
     }
     snoozeCurrentRing(minutes);
   };

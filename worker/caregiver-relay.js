@@ -32,7 +32,16 @@ export default {
     const pinHeader = request.headers.get('X-MedClock-Pin') || '';
 
     if (request.method === 'PUT') {
-      const body = await request.json().catch(() => null);
+      const rawText = await request.text();
+      if (rawText.length > 131072) {
+        return json({ error: 'Payload too large' }, 413);
+      }
+      let body = null;
+      try {
+        body = JSON.parse(rawText);
+      } catch {
+        body = null;
+      }
       if (!body || typeof body !== 'object') {
         return json({ error: 'Invalid payload' }, 400);
       }
