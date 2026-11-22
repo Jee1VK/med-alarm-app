@@ -16,11 +16,16 @@ export function toHHMM(date: Date): string {
 }
 
 export function formatTime12h(hhmm: string): string {
-  const [hStr, mStr] = hhmm.split(':');
-  const h = Number(hStr);
+  const parts = hhmm.split(':');
+  if (parts.length !== 2) return hhmm;
+  const h = Number(parts[0]);
+  const m = Number(parts[1]);
+  if (!Number.isFinite(h) || !Number.isFinite(m) || h < 0 || h > 23 || m < 0 || m > 59) {
+    return hhmm;
+  }
   const period = h >= 12 ? 'PM' : 'AM';
   const h12 = h % 12 === 0 ? 12 : h % 12;
-  return `${h12}:${mStr} ${period}`;
+  return `${h12}:${String(m).padStart(2, '0')} ${period}`;
 }
 
 export function formatDaysSummary(days: number[]): string {
@@ -49,11 +54,14 @@ export function foodTimingLabel(timing: FoodTiming): string {
 export function getMedicationTimes(med: Medication): string[] {
   if (med.scheduleMode === 'prn') return [];
   if (med.scheduleMode === 'interval') {
-    const stepHours = Math.max(1, Math.min(12, med.intervalHours ?? 8));
+    const rawHours = Number.isFinite(med.intervalHours) ? (med.intervalHours as number) : 8;
+    const stepHours = Math.max(1, Math.min(12, rawHours));
     const start = med.intervalStart || '08:00';
     const [startH, startM] = start.split(':').map(Number);
+    const safeH = Number.isFinite(startH) && startH >= 0 && startH <= 23 ? startH : 8;
+    const safeM = Number.isFinite(startM) && startM >= 0 && startM <= 59 ? startM : 0;
     const result: string[] = [];
-    for (let totalMins = startH * 60 + startM; totalMins < 24 * 60; totalMins += stepHours * 60) {
+    for (let totalMins = safeH * 60 + safeM; totalMins < 24 * 60; totalMins += stepHours * 60) {
       const h = String(Math.floor(totalMins / 60)).padStart(2, '0');
       const m = String(totalMins % 60).padStart(2, '0');
       result.push(`${h}:${m}`);

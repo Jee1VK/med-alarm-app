@@ -608,7 +608,7 @@ export function App() {
           </section>
 
           {toastMsg && (
-            <div className="toast-banner" role="status">
+            <div className="toast-banner" role="status" aria-live="polite">
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Sparkles size={18} aria-hidden="true" />
                 <span>{toastMsg}</span>
@@ -827,25 +827,23 @@ export function App() {
                       </div>
                       <div className="item-sub">{med.dosage}</div>
                       {(med.hasTabletPhoto || med.hasPrescriptionPhoto) && (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
                           {med.hasTabletPhoto && (
                             <button
                               type="button"
-                              className="badge badge--blue"
-                              style={{ cursor: 'pointer', minHeight: 32, padding: '0 10px' }}
+                              className="btn btn--secondary btn--sm"
                               onClick={() => setViewingPhoto({ medId: med.id, medName: med.name, kind: 'tablet' })}
                             >
-                              <Camera size={13} aria-hidden="true" /> Tablet Photo
+                              <Camera size={15} aria-hidden="true" /> Tablet Photo
                             </button>
                           )}
                           {med.hasPrescriptionPhoto && (
                             <button
                               type="button"
-                              className="badge"
-                              style={{ cursor: 'pointer', minHeight: 32, padding: '0 10px' }}
+                              className="btn btn--secondary btn--sm"
                               onClick={() => setViewingPhoto({ medId: med.id, medName: med.name, kind: 'prescription' })}
                             >
-                              <FileText size={13} aria-hidden="true" /> Prescription
+                              <FileText size={15} aria-hidden="true" /> Prescription
                             </button>
                           )}
                         </div>

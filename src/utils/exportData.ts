@@ -45,15 +45,36 @@ export function parseBackupJson(rawText: string): BackupPayload {
   if (!parsed || !Array.isArray(parsed.medications) || !Array.isArray(parsed.logs)) {
     throw new Error('Invalid MedClock backup file.');
   }
+
+  const sanitizedMeds: Medication[] = parsed.medications
+    .filter((m): m is Medication => Boolean(m && typeof m === 'object' && typeof m.id === 'string' && typeof m.name === 'string'))
+    .map((m) => ({
+      ...m,
+      dosage: typeof m.dosage === 'string' && m.dosage.trim() ? m.dosage : '1 tablet',
+      scheduleMode: m.scheduleMode ?? 'fixed',
+      times: Array.isArray(m.times) && m.times.length > 0 ? m.times : ['08:00'],
+      days: Array.isArray(m.days) && m.days.length > 0 ? m.days : [0, 1, 2, 3, 4, 5, 6],
+      foodTiming: m.foodTiming ?? 'anytime',
+      tone: m.tone ?? 'temple_chime',
+      vibrate: m.vibrate ?? true,
+      enabled: m.enabled ?? true,
+      trackStock: Boolean(m.trackStock),
+      remainingDoses: typeof m.remainingDoses === 'number' ? m.remainingDoses : 30,
+      totalDoses: typeof m.totalDoses === 'number' && m.totalDoses > 0 ? m.totalDoses : 30,
+      dosesPerIntake: typeof m.dosesPerIntake === 'number' && m.dosesPerIntake > 0 ? m.dosesPerIntake : 1,
+      refillThreshold: typeof m.refillThreshold === 'number' ? m.refillThreshold : 5,
+    }));
+
+  const sanitizedLogs: LogEntry[] = parsed.logs.filter(
+    (l): l is LogEntry =>
+      Boolean(l && typeof l === 'object' && typeof l.id === 'string' && typeof l.itemId === 'string' && typeof l.dateKey === 'string')
+  );
+
   return {
     version: 1,
     exportedAt: parsed.exportedAt ?? new Date().toISOString(),
-    medications: parsed.medications.map((m) => ({
-      ...m,
-      scheduleMode: m.scheduleMode ?? 'fixed',
-      vibrate: m.vibrate ?? true,
-    })),
-    logs: parsed.logs,
+    medications: sanitizedMeds,
+    logs: sanitizedLogs,
     settings: parsed.settings ?? {
       defaultSnoozeMinutes: 5,
       defaultVolume: 0.9,
@@ -63,12 +84,14 @@ export function parseBackupJson(rawText: string): BackupPayload {
 }
 
 function escapeCsv(value: string): string {
-  const needsQuotes = /[",\n\r]/.test(value);
-  const escaped = value.replace(/"/g, '""');
+  // Neutralize spreadsheet formula injection (=, +, -, @)
+  const safe = /^[=+\-@]/.test(value) ? `'${value}` : value;
+  const needsQuotes = /[",\n\r]/.test(safe);
+  const escaped = safe.replace(/"/g, '""');
   return needsQuotes ? `"${escaped}"` : escaped;
 }
 
-export function exportHistoryCsv(logs: LogEntry[]): void {
+export function buildHistoryCsv(logs: LogEntry[]): string {
   const header = ['Date', 'Scheduled Time', 'Medicine', 'Dosage / Details', 'Status', 'Logged At'];
   const rows = logs.map((l) => [
     l.dateKey,
@@ -78,6 +101,9 @@ export function exportHistoryCsv(logs: LogEntry[]): void {
     l.action,
     new Date(l.timestamp).toLocaleString(),
   ]);
-  const csv = [header, ...rows].map((row) => row.map(escapeCsv).join(',')).join('\r\n');
-  downloadBlob(csv, `medclock-history-${toDateKey(new Date())}.csv`, 'text/csv;charset=utf-8');
+  return [header, ...rows].map((row) => row.map(escapeCsv).join(',')).join('\r\n');
+}
+
+export function exportHistoryCsv(logs: LogEntry[]): void {
+  downloadBlob(buildHistoryCsv(logs), `medclock-history-${toDateKey(new Date())}.csv`, 'text/csv;charset=utf-8');
 }

@@ -487,12 +487,12 @@ function MedicationForm({
                   </button>
                 </div>
               ) : (
-                <label className="btn btn--secondary btn--sm" style={{ width: '100%' }}>
+                <label className="btn btn--secondary btn--sm photo-upload-label" style={{ width: '100%' }}>
                   <Camera size={16} aria-hidden="true" /> Add Tablet Photo
                   <input
                     type="file"
                     accept="image/*"
-                    style={{ display: 'none' }}
+                    className="sr-only"
                     onChange={(e) => void handlePhotoPick('tablet', e)}
                   />
                 </label>
@@ -515,12 +515,12 @@ function MedicationForm({
                   </button>
                 </div>
               ) : (
-                <label className="btn btn--secondary btn--sm" style={{ width: '100%' }}>
+                <label className="btn btn--secondary btn--sm photo-upload-label" style={{ width: '100%' }}>
                   <FileText size={16} aria-hidden="true" /> Add Prescription
                   <input
                     type="file"
                     accept="image/*"
-                    style={{ display: 'none' }}
+                    className="sr-only"
                     onChange={(e) => void handlePhotoPick('prescription', e)}
                   />
                 </label>
